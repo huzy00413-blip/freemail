@@ -128,6 +128,131 @@ export async function handleProxiesApi(request, db, url, path, options) {
       }
     }
 
+    // POST /api/admin/proxies/batch — 批量添加代理
+    if (path === '/api/admin/proxies/batch' && request.method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch (_) { return errorResponse('请求体必须为 JSON', 400); }
+
+      const rawText = String(body.proxies || '');
+      if (rawText.length > 65536) return errorResponse('请求体超过 64KB 限制', 413);
+
+      const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+      if (lines.length > 500) return errorResponse('单次最多添加 500 条代理', 400);
+      if (!lines.length) return errorResponse('未提供有效代理行', 400);
+
+      // 查询现有代理 URL 用于去重
+      let existingUrls = new Set();
+      try {
+        const { results } = await db.prepare('SELECT proxy_url FROM proxy_pool').all();
+        existingUrls = new Set((results || []).map(r => r.proxy_url));
+      } catch (_) { /* 表可能为空 */ }
+
+      const toInsert = [];
+      const errors = [];
+      const seenInBatch = new Set();
+
+      for (let i = 0; i < lines.length; i++) {
+        const lineNum = i + 1;
+        try {
+          const normalized = normalizeProxy(lines[i]);
+          if (existingUrls.has(normalized.url) || seenInBatch.has(normalized.url)) {
+            errors.push({ line: lineNum, error: '重复代理' });
+            continue;
+          }
+          seenInBatch.add(normalized.url);
+          toInsert.push(normalized);
+        } catch (e) {
+          errors.push({ line: lineNum, error: e.message });
+        }
+      }
+
+      // 批量写入
+      let added = 0;
+      if (toInsert.length) {
+        try {
+          const stmt = db.prepare(
+            `INSERT INTO proxy_pool (proxy_url, proxy_display, proxy_scheme, enabled, last_check_status, fail_count)
+             VALUES (?, ?, ?, 1, 'unknown', 0)`
+          );
+          const batch = toInsert.map(n => stmt.bind(n.url, n.display, n.scheme));
+          await db.batch(batch);
+          added = toInsert.length;
+        } catch (e) {
+          return errorResponse('批量写入失败：' + e.message, 500);
+        }
+      }
+
+      // 通知 Python 服务立即刷新代理池（不阻塞响应，失败不影响添加结果）
+      if (added > 0 && options.rebindServiceUrl && options.rebindServiceToken) {
+        try {
+          await fetch(`${options.rebindServiceUrl.replace(/\/+$/, '')}/admin/proxies/refresh`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${options.rebindServiceToken}` },
+          });
+        } catch (_) { /* 刷新失败可稍后手动刷新 */ }
+      }
+
+      return jsonResponse({
+        total: lines.length,
+        added,
+        failed: errors.length,
+        errors,
+      });
+    }
+
+    // POST /api/admin/proxies/test — 测试所有代理连通性
+    if (path === '/api/admin/proxies/test' && request.method === 'POST') {
+      if (!options.rebindServiceUrl || !options.rebindServiceToken) {
+        return errorResponse('换绑服务未配置，无法测试代理', 503);
+      }
+
+      let testResult;
+      try {
+        const resp = await fetch(
+          `${options.rebindServiceUrl.replace(/\/+$/, '')}/admin/proxies/test`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${options.rebindServiceToken}` },
+          }
+        );
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          return errorResponse(`换绑服务返回 ${resp.status}: ${txt.slice(0, 200)}`, 502);
+        }
+        testResult = await resp.json();
+      } catch (e) {
+        return errorResponse('无法连接换绑服务：' + e.message, 502);
+      }
+
+      // 同步测试结果到 D1
+      const items = testResult.items || [];
+      const now = new Date().toISOString();
+      try {
+        for (const item of items) {
+          const status = item.ok ? 'ok' : 'failed';
+          if (item.ok) {
+            await db.prepare(
+              `UPDATE proxy_pool SET last_check_status = ?, last_check_at = ?, fail_count = 0, enabled = 1
+               WHERE proxy_display = ?`
+            ).bind(status, now, item.address).run();
+          } else {
+            // 失败时 fail_count + 1，连续失败 3 次以上自动禁用
+            await db.prepare(
+              `UPDATE proxy_pool SET last_check_status = ?, last_check_at = ?,
+                 fail_count = fail_count + 1,
+                 enabled = CASE WHEN fail_count + 1 >= 3 THEN 0 ELSE enabled END
+               WHERE proxy_display = ?`
+            ).bind(status, now, item.address).run();
+          }
+        }
+      } catch (e) {
+        // D1 同步失败不影响返回测试结果
+        console.error('代理测试结果同步 D1 失败:', e);
+      }
+
+      return jsonResponse(testResult);
+    }
+
     // PATCH /api/admin/proxies/:id — 启用/禁用
     const matchPatch = path.match(/^\/api\/admin\/proxies\/(\d+)$/);
     if (matchPatch && request.method === 'PATCH') {

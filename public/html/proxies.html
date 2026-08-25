@@ -78,6 +78,35 @@
     .toast.show { opacity: 1; }
     .toast-success { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
     .toast-error { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal {
+      background: var(--surface); border-radius: 12px; width: 600px; max-width: 90vw;
+      max-height: 85vh; display: flex; flex-direction: column;
+      border: 1px solid var(--border);
+    }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { margin: 0; font-size: 16px; }
+    .modal-close {
+      background: none; border: none; font-size: 24px; cursor: pointer;
+      color: var(--text-muted); padding: 0; line-height: 1;
+    }
+    .modal-body { padding: 20px; overflow-y: auto; }
+    .modal-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 12px 20px; border-top: 1px solid var(--border);
+    }
+    .batch-errors {
+      background: var(--surface-hover); border-radius: 6px; padding: 10px 14px;
+      font-size: 13px; max-height: 150px; overflow-y: auto;
+    }
+    .latency-ok { color: #22c55e; font-size: 12px; }
+    .latency-fail { color: #ef4444; font-size: 12px; }
   </style>
 </head>
 <body class="admin-page">
@@ -103,6 +132,7 @@
   <div class="proxies-container">
     <div class="proxies-header">
       <h1>🔄 代理池管理</h1>
+      <button class="btn btn-primary" id="testAllBtn" onclick="testAllProxies()">测试全部代理</button>
     </div>
 
     <div class="stats-row">
@@ -116,6 +146,7 @@
       <div class="add-form">
         <input type="text" id="newProxy" placeholder="host:port:username:password 或 socks5h://user:pass@host:port" autocomplete="off" />
         <button class="btn btn-primary" id="addBtn" onclick="addProxy()">添加</button>
+        <button class="btn btn-ghost" onclick="openBatchModal()">批量添加</button>
       </div>
       <div class="format-hint">
         支持格式：<code>host:port:user:pass</code>（默认 socks5h）、<code>socks5h://user:pass@host:port</code>、<code>http://user:pass@host:port</code>、<code>https://...</code>、<code>socks5://...</code><br>
@@ -140,9 +171,33 @@
     </table>
   </div>
 
+  <!-- 批量添加模态框 -->
+  <div class="modal-overlay" id="batchModal" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>批量添加代理</h2>
+        <button class="modal-close" onclick="closeBatchModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="format-hint" style="margin-bottom:12px;">
+          每行一条代理，支持格式：<code>host:port:user:pass</code>、<code>http://user:pass@host:port</code>、<code>socks5://user:pass@host:port</code>、<code>socks5h://user:pass@host:port</code>，最多 500 条。
+        </div>
+        <textarea id="batchProxies" rows="10" placeholder="host:port:username:password&#10;socks5h://user:pass@host:port&#10;http://user:pass@host:port" style="width:100%;font-family:monospace;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--surface);color:var(--text);"></textarea>
+        <div id="batchResult" style="margin-top:12px;display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeBatchModal()">取消</button>
+        <button class="btn btn-primary" id="batchSubmitBtn" onclick="submitBatch()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
 <script>
+// 测试结果缓存（按 proxy_display 索引）
+let testResults = {};
+
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -181,12 +236,22 @@ async function loadProxies() {
       tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无代理，请添加</td></tr>';
       return;
     }
-    tbody.innerHTML = proxies.map(p => `
+    tbody.innerHTML = proxies.map(p => {
+      const tr = testResults[p.proxy_display];
+      let checkCell = statusBadge(p.last_check_status);
+      if (tr) {
+        if (tr.ok) {
+          checkCell = `<span class="badge badge-ok">正常</span> <span class="latency-ok">${tr.latency_ms}ms</span>`;
+        } else {
+          checkCell = `<span class="badge badge-failed">失败</span> <span class="latency-fail" title="${escapeHtml(tr.error || '')}">${escapeHtml((tr.error || '').slice(0, 30))}</span>`;
+        }
+      }
+      return `
       <tr>
         <td class="proxy-host">${escapeHtml(p.proxy_display)}</td>
         <td>${schemeBadge(p.proxy_scheme)}</td>
         <td><span class="badge ${p.enabled ? 'badge-on' : 'badge-off'}">${p.enabled ? '已启用' : '已禁用'}</span></td>
-        <td>${statusBadge(p.last_check_status)}</td>
+        <td>${checkCell}</td>
         <td>${p.fail_count || 0}</td>
         <td>
           <div class="actions-cell">
@@ -197,7 +262,7 @@ async function loadProxies() {
           </div>
         </td>
       </tr>
-    `).join('');
+    `;}).join('');
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty-state">加载失败：' + escapeHtml(e.message) + '</td></tr>';
   }
@@ -259,6 +324,82 @@ async function deleteProxy(id, display) {
     loadProxies();
   } catch (e) {
     showToast(e.message, 'error');
+  }
+}
+
+async function testAllProxies() {
+  const btn = document.getElementById('testAllBtn');
+  btn.disabled = true; btn.textContent = '测试中...';
+  try {
+    const r = await fetch('/api/admin/proxies/test', {
+      method: 'POST',
+      credentials: 'include'
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '测试失败');
+
+    // 缓存测试结果
+    testResults = {};
+    (d.items || []).forEach(item => { testResults[item.address] = item; });
+
+    showToast(`测试完成：${d.available}/${d.total} 可用`, d.failed > 0 ? 'error' : 'success');
+    await loadProxies();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '测试全部代理';
+  }
+}
+
+function openBatchModal() {
+  document.getElementById('batchModal').style.display = 'flex';
+  document.getElementById('batchProxies').value = '';
+  document.getElementById('batchResult').style.display = 'none';
+}
+
+function closeBatchModal() {
+  document.getElementById('batchModal').style.display = 'none';
+}
+
+async function submitBatch() {
+  const text = document.getElementById('batchProxies').value;
+  if (!text.trim()) { showToast('请输入代理列表', 'error'); return; }
+
+  const btn = document.getElementById('batchSubmitBtn');
+  btn.disabled = true; btn.textContent = '保存中...';
+  const resultDiv = document.getElementById('batchResult');
+  try {
+    const r = await fetch('/api/admin/proxies/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ proxies: text })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '批量添加失败');
+
+    let html = `<div class="batch-errors">`;
+    html += `<div class="ok-line">✓ 成功添加 ${d.added} 条，失败 ${d.failed} 条（共 ${d.total} 条）</div>`;
+    if (d.errors && d.errors.length) {
+      d.errors.forEach(e => {
+        html += `<div class="err-line">第 ${e.line} 行：${escapeHtml(e.error)}</div>`;
+      });
+    }
+    html += `</div>`;
+    resultDiv.innerHTML = html;
+    resultDiv.style.display = 'block';
+
+    if (d.added > 0) {
+      showToast(`成功添加 ${d.added} 条代理`, 'success');
+      loadProxies();
+      if (!d.failed) {
+        setTimeout(closeBatchModal, 1500);
+      }
+    }
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '保存';
   }
 }
 

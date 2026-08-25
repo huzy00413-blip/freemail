@@ -33,6 +33,7 @@ import shutil
 import threading
 import traceback
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, quote
@@ -368,6 +369,42 @@ def _release_proxy(proxy_url: str | None, success: bool) -> None:
                         p["available"] = False
                         print(f"[proxy] 代理 {_mask_proxy(proxy_url)} 任务失败，累计 {p['fail_count']} 次，标记不可用", file=sys.stderr)
                 break
+
+
+def _update_proxy_status(proxy_url: str, ok: bool) -> None:
+    """测试后更新代理状态（成功重置失败计数，失败累加并可能禁用）。"""
+    with _proxy_lock:
+        for p in _proxies:
+            if p["url"] == proxy_url:
+                p["last_check"] = time.time()
+                if ok:
+                    p["fail_count"] = 0
+                    p["available"] = True
+                else:
+                    p["fail_count"] += 1
+                    if p["fail_count"] >= MAX_PROXY_FAILURES:
+                        p["available"] = False
+                break
+
+
+def _test_single_proxy(proxy_url: str) -> dict:
+    """测试单个代理连通性，返回脱敏结果。"""
+    import time as _time
+    t0 = _time.time()
+    try:
+        _original_requests_get(
+            PROXY_TEST_URL,
+            proxies={"http": proxy_url, "https": proxy_url},
+            timeout=10,
+            allow_redirects=True,
+        )
+        latency = int((_time.time() - t0) * 1000)
+        _update_proxy_status(proxy_url, True)
+        return {"address": _mask_proxy(proxy_url), "ok": True, "latency_ms": latency}
+    except Exception as e:
+        _update_proxy_status(proxy_url, False)
+        err = str(e)[:80]
+        return {"address": _mask_proxy(proxy_url), "ok": False, "error": err}
 
 
 def _recheck_disabled_proxies() -> None:
@@ -834,6 +871,48 @@ async def health() -> dict[str, Any]:
         "auth_required": True,
         "version": "2.1.0",
     }
+
+
+@app.post("/admin/proxies/test", dependencies=[Depends(verify_token)])
+async def test_all_proxies() -> dict[str, Any]:
+    """测试所有启用的代理连通性（并发上限 5），返回脱敏结果。"""
+    if not _PROXY_POOL_ENABLED:
+        return {"total": 0, "available": 0, "failed": 0, "items": []}
+
+    with _proxy_lock:
+        to_test = [p["url"] for p in _proxies if p["available"]]
+
+    if not to_test:
+        return {"total": 0, "available": 0, "failed": 0, "items": []}
+
+    items: list[dict] = []
+    max_workers = min(5, len(to_test))
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_test_single_proxy, url): url for url in to_test}
+        for fut in as_completed(futures):
+            try:
+                items.append(fut.result())
+            except Exception as e:
+                url = futures[fut]
+                items.append({"address": _mask_proxy(url), "ok": False, "error": str(e)[:80]})
+
+    available = sum(1 for i in items if i["ok"])
+    failed = len(items) - available
+    print(f"[proxy] 测试完成: {available}/{len(items)} 可用", file=sys.stderr)
+    return {"total": len(items), "available": available, "failed": failed, "items": items}
+
+
+@app.post("/admin/proxies/refresh", dependencies=[Depends(verify_token)])
+async def refresh_proxies() -> dict[str, Any]:
+    """立即从 Worker 重新拉取代理池（不等定时器）。"""
+    worker_urls = _fetch_worker_proxies()
+    file_urls = _load_file_proxies()
+    _merge_proxies(file_urls, worker_urls)
+    with _proxy_lock:
+        total = len(_proxies)
+        available = sum(1 for p in _proxies if p["available"] and p["fail_count"] < MAX_PROXY_FAILURES)
+    print(f"[proxy] 手动刷新完成: {total} 个代理，{available} 可用", file=sys.stderr)
+    return {"success": True, "total": total, "available": available, "worker_proxies": len(worker_urls)}
 
 
 @app.post("/rebind", response_model=RebindTaskResponse, dependencies=[Depends(verify_token)])
