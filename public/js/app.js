@@ -18,7 +18,7 @@ import { renderMailboxList, renderMbPager, getCurrentPage, setCurrentPage, getPa
 import { initSessionFromCache, validateSession, isGuest, isAdmin, applySessionUI, initGuestMode } from './modules/app/session.js';
 import { loadDomains, getStoredLength, saveLength, updateRangeProgress, getSelectedDomainIndex, populateDomains, STORAGE_KEYS } from './modules/app/domains.js';
 import { initCompose, showSentEmailDetail } from './modules/app/compose.js';
-import { showEmailDetail, deleteEmailById, deleteSentById, copyFromEmailList, prefetchEmails } from './modules/app/email-viewer.js';
+import { showEmailDetail, deleteEmailById, deleteSentById, copyFromEmailList, prefetchEmails, generateShareLink, copyShareLink } from './modules/app/email-viewer.js';
 import { generateMailbox, generateNameMailbox, createCustomMailbox, updateEmailDisplay, selectMailboxAddress, toggleMailboxPin, deleteMailboxAddress, copyMailboxAddress, clearAllEmails, logout } from './modules/app/mailbox-actions.js';
 
 // 全局状态
@@ -148,6 +148,8 @@ window.showEmail = (id) => showEmailDetail(id, els, api, showToast);
 window.showSentEmail = async (id) => { try { const r = await api(`/api/sent/${id}`); showSentEmailDetail(await r.json(), els); } catch(e) { showToast(e.message || '加载失败', 'error'); }};
 window.deleteEmail = (id) => deleteEmailById(id, api, showToast, showConfirm, refresh);
 window.deleteSent = (id) => deleteSentById(id, api, showToast, showConfirm, refresh);
+window.generateShareLink = (id) => generateShareLink(id);
+window.copyShareLink = () => copyShareLink();
 window.copyFromList = (e, id) => copyFromEmailList(e, id, api, showToast);
 window.refreshEmails = refresh;
 

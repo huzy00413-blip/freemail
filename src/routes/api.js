@@ -39,6 +39,7 @@ router.all('/api/*', async (c) => {
     cyberpersonsApiKey: c.env.CYBERPERSONS_API_KEY || c.env.CYBERPERSONS_API_TOKEN || c.env.CYBERPERSONS || '',
     adminName: String(c.env.ADMIN_NAME || 'admin').trim().toLowerCase(),
     r2: c.env.MAIL_EML,
+    workerOrigin: c.env.WORKER_ORIGIN || '',
     authPayload
   };
 

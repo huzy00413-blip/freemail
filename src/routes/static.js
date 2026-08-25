@@ -72,6 +72,8 @@ router.get('/login.html', async (c) => redirectIfLoggedIn(c, '/'));
 
 router.get('*', async (c) => {
   const pathname = new URL(c.req.url).pathname;
+  // 公开分享路径由 shareRoutes 处理，此处不拦截
+  if (pathname.startsWith('/share/')) return c.notFound();
   const JWT_TOKEN = c.env.JWT_TOKEN || c.env.JWT_SECRET || '';
 
   if (!KNOWN_PATHS.has(pathname)

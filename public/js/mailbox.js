@@ -260,6 +260,57 @@ async function deleteEmail(id) {
   } catch(e) { showToast('删除失败', 'error'); }
 }
 
+// 生成邮件公开分享链接
+async function generateShareLinkMb(id) {
+  const btn = document.getElementById('share-btn');
+  const container = document.getElementById('share-link-container');
+  const input = document.getElementById('share-link-input');
+  if (!btn || !container || !input) return;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div><span style="margin-left:6px;">生成中…</span>`;
+
+  try {
+    const r = await fetch(`/api/message/${id}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await r.json();
+    if (r.ok && data.share_url) {
+      input.value = data.share_url;
+      container.style.display = 'block';
+      btn.style.display = 'none';
+      showToast('分享链接已生成', 'success');
+    } else {
+      showToast(data.error || '生成失败', 'error');
+    }
+  } catch(e) {
+    showToast(e.message || '生成失败', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// 复制分享链接
+function copyShareLinkMb() {
+  const input = document.getElementById('share-link-input');
+  if (!input || !input.value) return;
+  input.select();
+  try {
+    navigator.clipboard.writeText(input.value).then(() => {
+      showToast('链接已复制到剪贴板', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      showToast('链接已复制', 'success');
+    });
+  } catch(_) {
+    document.execCommand('copy');
+    showToast('链接已复制', 'success');
+  }
+}
+
 // 修改密码
 async function changePassword() {
   const current = els.currentPasswordInput?.value;
@@ -383,6 +434,8 @@ els.logoutBtn?.addEventListener('click', async () => {
 
 // 全局函数
 window.deleteEmail = deleteEmail;
+window.generateShareLinkMb = generateShareLinkMb;
+window.copyShareLinkMb = copyShareLinkMb;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', initAuth);

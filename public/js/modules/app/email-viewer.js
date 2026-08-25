@@ -52,7 +52,23 @@ export async function showEmailDetail(id, elements, api, showToast) {
       bodyHtml = `<div class="email-content-area"><pre class="email-content-text" style="white-space:pre-wrap;word-break:break-word">${escapeHtml(email.content || '')}</pre></div>`;
     }
 
-    modalContent.innerHTML = `<div class="email-detail-container">${metaHtml}${codeHtml}${bodyHtml}</div>`;
+    // 分享链接区域
+    const shareHtml = `
+      <div class="email-share-section" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e8e8e8);">
+        <div id="share-link-container" style="display:none; margin-bottom:12px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="share-link-input" type="text" readonly style="flex:1;padding:8px 12px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:var(--bg-secondary,#f9f9f9);color:var(--text,#333);" />
+            <button class="btn btn-secondary btn-sm" onclick="copyShareLink()" style="white-space:nowrap;">复制链接</button>
+          </div>
+        </div>
+        <button id="share-btn" class="btn btn-primary btn-sm" onclick="generateShareLink(${id})" style="display:inline-flex;align-items:center;gap:6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-share"/></svg>
+          生成公开分享链接
+        </button>
+      </div>
+    `;
+
+    modalContent.innerHTML = `<div class="email-detail-container">${metaHtml}${codeHtml}${bodyHtml}${shareHtml}</div>`;
     modal.classList.add('show');
   } catch(e) {
     showToast(e.message || '加载失败', 'error');
@@ -158,10 +174,68 @@ export async function prefetchEmails(emails, api) {
   }
 }
 
+/**
+ * 生成邮件公开分享链接
+ * @param {number} id - 邮件ID
+ */
+export async function generateShareLink(id) {
+  const btn = document.getElementById('share-btn');
+  const container = document.getElementById('share-link-container');
+  const input = document.getElementById('share-link-input');
+  if (!btn || !container || !input) return;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div><span style="margin-left:6px;">生成中…</span>`;
+
+  try {
+    const r = await fetch(`/api/message/${id}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await r.json();
+    if (r.ok && data.share_url) {
+      input.value = data.share_url;
+      container.style.display = 'block';
+      btn.style.display = 'none';
+      if (typeof showToast === 'function') showToast('分享链接已生成', 'success');
+    } else {
+      if (typeof showToast === 'function') showToast(data.error || '生成失败', 'error');
+    }
+  } catch(e) {
+    if (typeof showToast === 'function') showToast(e.message || '生成失败', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+/**
+ * 复制分享链接
+ */
+export function copyShareLink() {
+  const input = document.getElementById('share-link-input');
+  if (!input || !input.value) return;
+  input.select();
+  try {
+    navigator.clipboard.writeText(input.value).then(() => {
+      if (typeof showToast === 'function') showToast('链接已复制到剪贴板', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      if (typeof showToast === 'function') showToast('链接已复制', 'success');
+    });
+  } catch(_) {
+    document.execCommand('copy');
+    if (typeof showToast === 'function') showToast('链接已复制', 'success');
+  }
+}
+
 export default {
   showEmailDetail,
   deleteEmailById,
   deleteSentById,
   copyFromEmailList,
-  prefetchEmails
+  prefetchEmails,
+  generateShareLink,
+  copyShareLink
 };

@@ -104,3 +104,17 @@ CREATE TABLE IF NOT EXISTS sent_emails (
 CREATE INDEX IF NOT EXISTS idx_sent_emails_resend_id      ON sent_emails(resend_id);
 CREATE INDEX IF NOT EXISTS idx_sent_emails_status_created ON sent_emails(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sent_emails_from_addr      ON sent_emails(from_addr);
+
+-- ────────────────────────────────────────
+-- 邮件公开分享表
+-- ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS message_share (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id  INTEGER NOT NULL,
+  token       TEXT    NOT NULL UNIQUE,
+  expire_at   TEXT,
+  created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_message_share_token    ON message_share(token);
+CREATE INDEX IF NOT EXISTS idx_message_share_message  ON message_share(message_id);

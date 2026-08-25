@@ -42,12 +42,29 @@ export function renderEmailDetail(email) {
     codeHtml = `<div class="code-highlight" onclick="navigator.clipboard.writeText('${escapeAttr(verificationCode)}')" title="点击复制" style="cursor:pointer">${escapeHtml(verificationCode)}</div>`;
   }
 
+  // 分享链接区域
+  const shareHtml = `
+    <div class="email-share-section" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e8e8e8);">
+      <div id="share-link-container" style="display:none; margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="share-link-input" type="text" readonly style="flex:1;padding:8px 12px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:13px;background:var(--bg-secondary,#f9f9f9);color:var(--text,#333);" />
+          <button class="btn btn-secondary btn-sm" onclick="copyShareLinkMb()" style="white-space:nowrap;">复制链接</button>
+        </div>
+      </div>
+      <button id="share-btn" class="btn btn-primary btn-sm" onclick="generateShareLinkMb(${email.id})" style="display:inline-flex;align-items:center;gap:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-share"/></svg>
+        生成公开分享链接
+      </button>
+    </div>
+  `;
+
   return `
     <div class="email-detail-container">
       <h2 style="font-size:18px;font-weight:700;color:var(--text);word-break:break-all;padding:0 4px">${subject}</h2>
       ${metaHtml}
       ${codeHtml}
       ${content}
+      ${shareHtml}
     </div>
   `;
 }

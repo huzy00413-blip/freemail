@@ -8,6 +8,7 @@ import { authMiddleware } from './middleware/app.js';
 import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import staticRoutes from './routes/static.js';
+import shareRoutes from './routes/share.js';
 import { handleEmailEvent } from './email/handler.js';
 
 const app = new Hono();
@@ -26,6 +27,9 @@ app.use('*', async (c, next) => {
 
 // 公开认证路由（/api/logout, /api/login）
 app.route('/', authRoutes);
+
+// 公开分享路由（无需登录）
+app.route('/', shareRoutes);
 
 // 认证中间件
 app.use('/api/*', authMiddleware());

@@ -5,7 +5,7 @@
 
 import { getMailboxAccess, getMessageAccess, errorResponse } from './helpers.js';
 import { buildMockEmails, buildMockEmailDetail } from './mock.js';
-import { extractEmail } from '../utils/common.js';
+import { extractEmail, generateRandomId } from '../utils/common.js';
 import { getMailboxIdByAddress } from '../db/index.js';
 import { parseEmailBody } from '../email/parser.js';
 
@@ -245,6 +245,42 @@ export async function handleEmailsApi(request, db, url, path, options) {
     } catch (e) {
       console.error('删除邮件失败:', e);
       return errorResponse('删除邮件时发生错误: ' + e.message, 500);
+    }
+  }
+
+  // 生成邮件公开分享链接
+  if (request.method === 'POST' && path.startsWith('/api/message/') && path.endsWith('/share')) {
+    if (isMock) return errorResponse('演示模式不可分享', 403);
+    const parts = path.split('/');
+    const messageId = parts[3];
+    if (!messageId || !Number.isInteger(parseInt(messageId, 10))) return errorResponse('无效的邮件ID', 400);
+    const access = await getMessageAccess(db, request, options, messageId);
+    if (!access.exists) return errorResponse('未找到邮件', 404);
+    if (!access.allowed) return errorResponse('Forbidden', 403);
+    try {
+      const existing = await db.prepare(
+        'SELECT id, token, expire_at FROM message_share WHERE message_id = ? ORDER BY id DESC LIMIT 1'
+      ).bind(Number(messageId)).first();
+      let token;
+      if (existing && (!existing.expire_at || new Date(existing.expire_at) > new Date())) {
+        token = existing.token;
+      } else {
+        token = generateRandomId(16);
+        await db.prepare(
+          'INSERT INTO message_share (message_id, token, expire_at) VALUES (?, ?, NULL)'
+        ).bind(Number(messageId), token).run();
+      }
+      const origin = options.workerOrigin || '';
+      const shareUrl = `${origin}/share/${token}`;
+      return Response.json({
+        success: true,
+        token,
+        share_url: shareUrl,
+        message: '分享链接已生成'
+      });
+    } catch (e) {
+      console.error('生成分享链接失败:', e);
+      return errorResponse('生成分享链接失败: ' + e.message, 500);
     }
   }
 

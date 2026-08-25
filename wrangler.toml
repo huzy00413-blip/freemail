@@ -8,7 +8,7 @@ keep_vars=true
 [[d1_databases]]
 binding = "TEMP_MAIL_DB"
 database_name = "mail_free_db" #你的d1数据库名称
-database_id = "b6711963-dd4b-4071-a531-512317880c19" # 你的database_id
+database_id = "66317a51-8e94-47f7-b92c-fd70cf170807" # 你的database_id
 # 登录会话过期时间（单位：天，默认7天）
 # 环境变量
 [vars]
@@ -20,6 +20,7 @@ JWT_TOKEN="dfvhluhdaslufhvdv"
 JWT_TOKENGUEST_PASSWORD="dfsfsfxzcv"
 SESSION_EXPIRE_DAYS="365"
 MAIL_DOMAIN="你的域名列表"
+WORKER_ORIGIN="https://mailfree.1842068403.workers.dev"
 RESEND_API_KEY="RESEND发件密钥"
 SENDFLARE_API_KEY="SENDFLARE发件密钥"
 CYBERPERSONS_API_KEY="CYBERPERSONS发件密钥"
