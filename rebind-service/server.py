@@ -321,7 +321,9 @@ def _check_proxy_connectivity(proxy_url: str) -> bool:
     if _HAS_CFFI:
         session = None
         try:
-            session = CffiSession(impersonate="chrome136")
+            # 代理连通性检测不需要 TLS 指纹模拟；使用基础 curl_cffi Session
+            # 仍走 libcurl 原生 SOCKS5 栈，与实际换绑请求的代理路径一致。
+            session = CffiSession()
             session.trust_env = False
             session.proxies = {"https": normalized, "http": normalized}
             resp = session.get(PROXY_TEST_URL, timeout=PROXY_CHECK_TIMEOUT, allow_redirects=True)
@@ -437,7 +439,7 @@ def _test_single_proxy(proxy_url: str) -> dict:
     session = None
     try:
         if _HAS_CFFI:
-            session = CffiSession(impersonate="chrome136")
+            session = CffiSession()
             session.trust_env = False
             session.proxies = {"https": normalized, "http": normalized}
             resp = session.get(PROXY_TEST_URL, timeout=10, allow_redirects=True)
