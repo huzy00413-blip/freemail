@@ -57,6 +57,14 @@ except Exception as exc:  # pragma: no cover
     print("       请确认 rebind_core/ 与 registration_core/ 位于:", CORE_DIR, file=sys.stderr)
     run_rebind_email = None  # type: ignore
 
+# curl_cffi 用于代理连通性检测（与实际换绑请求使用相同的 TLS 栈）
+try:
+    from curl_cffi.requests import Session as CffiSession
+    _HAS_CFFI = True
+except ImportError:
+    _HAS_CFFI = False
+    print("[WARN] curl_cffi 不可用，代理检测将降级到 requests", file=sys.stderr)
+
 # ---------------------------------------------------------------------------
 # 配置（启动时校验）
 # ---------------------------------------------------------------------------
@@ -80,7 +88,7 @@ CALLBACK_MAX_RETRIES = 3
 _PROXY_POOL_RAW = os.environ.get("PROXY_POOL", "").strip()
 MAX_PROXY_FAILURES = int(os.environ.get("REBIND_MAX_PROXY_FAILURES", "5"))
 PROXY_CHECK_TIMEOUT = float(os.environ.get("REBIND_PROXY_CHECK_TIMEOUT", "5"))
-PROXY_TEST_URL = os.environ.get("REBIND_PROXY_TEST_URL", "https://auth.openai.com/")
+PROXY_TEST_URL = os.environ.get("REBIND_PROXY_TEST_URL", "https://cloudflare.com/cdn-cgi/trace")
 PROXY_RECHECK_INTERVAL = int(os.environ.get("REBIND_PROXY_RECHECK_INTERVAL", "300"))
 
 # 代理格式支持
@@ -296,18 +304,52 @@ def _mask_proxy(proxy_url: str) -> str:
         return "***"
 
 
+def _normalize_socks_proxy(proxy_url: str) -> str:
+    """curl_cffi 推荐 socks5h（DNS 走代理端），与上游 create_http_session 一致。"""
+    if proxy_url.startswith("socks5://"):
+        return "socks5h://" + proxy_url[len("socks5://"):]
+    return proxy_url
+
+
 def _check_proxy_connectivity(proxy_url: str) -> bool:
-    """通过代理请求测试 URL，验证代理可用。"""
-    try:
-        _original_requests_get(
-            PROXY_TEST_URL,
-            proxies={"http": proxy_url, "https": proxy_url},
-            timeout=PROXY_CHECK_TIMEOUT,
-            allow_redirects=True,
-        )
-        return True
-    except Exception:
-        return False
+    """通过代理请求测试 URL，验证代理可用。
+
+    优先使用 curl_cffi（与实际换绑请求相同的 TLS 栈和 SOCKS5 实现），
+    降级到 requests（仅 HTTP 代理可靠，SOCKS5 需要 PySocks）。
+    """
+    normalized = _normalize_socks_proxy(proxy_url)
+    if _HAS_CFFI:
+        session = None
+        try:
+            session = CffiSession(impersonate="chrome136")
+            session.trust_env = False
+            session.proxies = {"https": normalized, "http": normalized}
+            resp = session.get(PROXY_TEST_URL, timeout=PROXY_CHECK_TIMEOUT, allow_redirects=True)
+            if resp.status_code != 200:
+                return False
+            # cloudflare trace 应包含 ip= 字段
+            if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
+                return False
+            return True
+        except Exception:
+            return False
+        finally:
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+    else:
+        try:
+            _original_requests_get(
+                PROXY_TEST_URL,
+                proxies={"http": normalized, "https": normalized},
+                timeout=PROXY_CHECK_TIMEOUT,
+                allow_redirects=True,
+            )
+            return True
+        except Exception:
+            return False
 
 
 def _acquire_proxy() -> str | None:
@@ -388,16 +430,28 @@ def _update_proxy_status(proxy_url: str, ok: bool) -> None:
 
 
 def _test_single_proxy(proxy_url: str) -> dict:
-    """测试单个代理连通性，返回脱敏结果。"""
+    """测试单个代理连通性，返回脱敏结果。使用 curl_cffi（与换绑请求同栈）。"""
     import time as _time
+    normalized = _normalize_socks_proxy(proxy_url)
     t0 = _time.time()
+    session = None
     try:
-        _original_requests_get(
-            PROXY_TEST_URL,
-            proxies={"http": proxy_url, "https": proxy_url},
-            timeout=10,
-            allow_redirects=True,
-        )
+        if _HAS_CFFI:
+            session = CffiSession(impersonate="chrome136")
+            session.trust_env = False
+            session.proxies = {"https": normalized, "http": normalized}
+            resp = session.get(PROXY_TEST_URL, timeout=10, allow_redirects=True)
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
+                raise RuntimeError("trace 无出口 IP")
+        else:
+            _original_requests_get(
+                PROXY_TEST_URL,
+                proxies={"http": normalized, "https": normalized},
+                timeout=10,
+                allow_redirects=True,
+            )
         latency = int((_time.time() - t0) * 1000)
         _update_proxy_status(proxy_url, True)
         return {"address": _mask_proxy(proxy_url), "ok": True, "latency_ms": latency}
@@ -405,6 +459,12 @@ def _test_single_proxy(proxy_url: str) -> dict:
         _update_proxy_status(proxy_url, False)
         err = str(e)[:80]
         return {"address": _mask_proxy(proxy_url), "ok": False, "error": err}
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
 
 
 def _recheck_disabled_proxies() -> None:

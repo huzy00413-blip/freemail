@@ -1,6 +1,5 @@
 # 原项目依赖（固定版本，避免上游 break change）
 requests==2.32.3
-PySocks==1.7.1
 curl-cffi==0.7.4
 
 # HTTP 服务依赖
