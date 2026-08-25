@@ -139,12 +139,25 @@
 <script>
 let pollTimer = null;
 let currentTaskId = null;
+let currentSession = null;
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled', 'expired']);
 
 async function checkAuth() {
   try {
     const r = await fetch('/api/session', { credentials: 'include' });
-    if (!r.ok) { window.location.replace('/html/login.html?redirect=/html/rebind.html'); return false; }
+    if (!r.ok) {
+      const redirect = encodeURIComponent('/html/rebind.html' + window.location.search);
+      window.location.replace('/html/login.html?redirect=' + redirect);
+      return false;
+    }
+    currentSession = await r.json();
+    // guest 和 mailbox-only 身份禁止使用换绑
+    if (currentSession.role === 'guest' || currentSession.role === 'mailbox') {
+      document.getElementById('formBody').style.display = 'none';
+      document.getElementById('notEnabled').style.display = 'block';
+      document.getElementById('notEnabledReason').textContent = '当前身份无权使用换绑功能。';
+      return false;
+    }
     return true;
   } catch (_) { window.location.replace('/html/login.html'); return false; }
 }
@@ -329,7 +342,25 @@ function escapeHtml(s) {
 // 初始化
 (async function init() {
   const authed = await checkAuth();
-  if (authed) await checkEnabled();
+  if (!authed) return;
+  const enabled = await checkEnabled();
+  if (!enabled) return;
+
+  // 从 URL 参数读取 new_email 并预填（仅预填，不作为授权依据；提交时后端仍校验权限）
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const newEmail = params.get('new_email');
+    if (newEmail) {
+      const input = document.getElementById('newEmail');
+      input.value = newEmail.trim().toLowerCase();
+      // 非严格管理员：新邮箱字段设为只读（只能使用从邮箱列表带入的本人邮箱）
+      if (currentSession && !currentSession.strictAdmin) {
+        input.readOnly = true;
+        input.style.backgroundColor = '#f5f7fa';
+        input.style.cursor = 'not-allowed';
+      }
+    }
+  } catch (_) {}
 })();
 </script>
 </body>

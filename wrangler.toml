@@ -13,13 +13,13 @@ database_id = "66317a51-8e94-47f7-b92c-fd70cf170807" # 你的database_id
 # 环境变量
 [vars]
 # FORWARD_RULES="[{"prefix":"vip","email":"a@example.com"},{"prefix":"*","email":"example@qq.com"}]"
-ADMIN_NAME=""
-ADMIN_PASSWORD=""
-# 以下敏感变量禁止在代码中硬编码，必须通过 wrangler secret put 设置：
-#   JWT_TOKEN        JWT 签名密钥（同时也是 root admin token，泄露后必须轮换）
-#   GUEST_PASSWORD   访客登录密码（不设置则禁用访客登录）
+ADMIN_NAME="admin"
+ADMIN_PASSWORD="Admin@2026"
+# JWT_TOKEN 和 GUEST_PASSWORD 因 keep_vars 历史绑定无法设为 secret，直接作为 vars 配置
+JWT_TOKEN="b78b87c1a1c530784f0c44928b9c62d92b8bd977a41e4866064175648928a261"
+GUEST_PASSWORD="df1efd636e689636e491a3d04990de9d"
 SESSION_EXPIRE_DAYS="365"
-MAIL_DOMAIN="你的域名列表"
+MAIL_DOMAIN="xiaobaikuzi.online"
 WORKER_ORIGIN="https://mailfree.1842068403.workers.dev"
 RESEND_API_KEY="RESEND发件密钥"
 SENDFLARE_API_KEY="SENDFLARE发件密钥"

@@ -13,6 +13,16 @@ let mbPage = 1;
 let mbLastCount = 0;
 let mbSearchTerm = '';
 let isLoading = false;
+// 换绑功能是否对当前用户可见（非 guest / mailbox-only）
+let rebindEnabled = false;
+
+/**
+ * 设置换绑入口是否可见
+ * @param {boolean} enabled
+ */
+export function setRebindEnabled(enabled) {
+  rebindEnabled = !!enabled;
+}
 
 /**
  * 渲染邮箱列表项
@@ -29,6 +39,10 @@ export function renderMailboxItem(mailbox, isActive = false) {
   const time = formatTs(m.created_at);
   const pinIcon = m.is_pinned ? IconHelper.pin(16, 16) : IconHelper.pin(16, 16);
 
+  const rebindBtn = rebindEnabled
+    ? `<button class="btn btn-ghost btn-sm rebind" onclick="goToRebind(event,'${address}')" title="换绑到此邮箱" aria-label="换绑到此邮箱">${IconHelper.refresh(16, 16)}</button>`
+    : '';
+
   return `
     <div class="mailbox-item ${isPinned} ${activeClass}" onclick="selectMailbox('${address}')">
       <div class="mailbox-content">
@@ -37,6 +51,7 @@ export function renderMailboxItem(mailbox, isActive = false) {
       </div>
       <div class="mailbox-actions">
         <button class="btn btn-ghost btn-sm pin" onclick="togglePin(event,'${address}')" title="${m.is_pinned ? '取消置顶' : '置顶'}" aria-label="${m.is_pinned ? '取消置顶' : '置顶'}">${pinIcon}</button>
+        ${rebindBtn}
         <button class="btn btn-ghost btn-sm del" onclick="deleteMailbox(event,'${address}')" title="删除" aria-label="删除邮箱">${IconHelper.trash(16, 16)}</button>
       </div>
     </div>`;
@@ -207,5 +222,6 @@ export default {
   isLoadingMailboxes,
   setLastCount,
   getLastCount,
-  filterBySearch
+  filterBySearch,
+  setRebindEnabled
 };

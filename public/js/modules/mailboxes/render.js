@@ -3,6 +3,17 @@
  * @module modules/mailboxes/render
  */
 
+// 换绑功能是否对当前用户可见（仅严格管理员在全部邮箱页可见）
+let rebindAvailable = false;
+
+/**
+ * 设置换绑入口是否可见
+ * @param {boolean} available
+ */
+export function setRebindAvailable(available) {
+  rebindAvailable = !!available;
+}
+
 /**
  * 格式化时间
  * @param {string} ts - 时间戳
@@ -80,6 +91,7 @@ export function renderCard(m) {
         <button class="btn-icon" data-action="password" title="${m.password_is_default ? '设置密码' : '重置密码'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-key"/></svg></button>
         <button class="btn-icon" data-action="forward" title="设置转发"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-forward"/></svg></button>
         <button class="btn-icon ${m.is_favorite ? 'active' : ''}" data-action="favorite" title="${m.is_favorite ? '取消收藏' : '收藏'}"><svg width="14" height="14" viewBox="0 0 24 24" fill="${m.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-star-${m.is_favorite ? '' : 'empty'}"/></svg></button>
+        ${rebindAvailable ? '<button class="btn-icon" data-action="rebind" title="换绑到此邮箱"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-refresh"/></svg></button>' : ''}
       </div>
     </div>`;
 }
@@ -118,6 +130,7 @@ export function renderListItem(m) {
         <button class="btn ${m.is_favorite ? 'active' : ''}" data-action="favorite" title="${m.is_favorite ? '取消收藏' : '收藏'}">${m.is_favorite ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><use href="/icons/sprites.svg#icon-star"/></svg>' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-star-empty"/></svg>'}</button>
         <button class="btn" data-action="login" title="${m.can_login ? '禁止登录' : '允许登录'}">${m.can_login ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-lock"/></svg>' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-unlock"/></svg>'}</button>
         <button class="btn" data-action="password" title="${m.password_is_default ? '设置密码' : '重置密码'}">🔑</button>
+        ${rebindAvailable ? '<button class="btn" data-action="rebind" title="换绑到此邮箱"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="/icons/sprites.svg#icon-refresh"/></svg></button>' : ''}
         <button class="btn" data-action="delete" title="删除">🗑️</button>
       </div>
     </div>`;
@@ -145,5 +158,6 @@ export function renderList(list) {
 
 export default {
   formatTime, escapeHtml, createSkeletonCard, createSkeletonListItem,
-  generateSkeleton, renderCard, renderListItem, renderGrid, renderList
+  generateSkeleton, renderCard, renderListItem, renderGrid, renderList,
+  setRebindAvailable
 };

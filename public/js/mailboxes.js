@@ -6,7 +6,7 @@
 import { getCurrentUserKey } from './storage.js';
 import { openForwardDialog, toggleFavorite, batchSetFavorite, injectDialogStyles } from './mailbox-settings.js';
 import { api, loadMailboxes as fetchMailboxes, loadDomains as fetchDomains, deleteMailbox as apiDeleteMailbox, toggleLogin as apiToggleLogin, batchToggleLogin, resetPassword as apiResetPassword, changePassword as apiChangePassword } from './modules/mailboxes/api.js';
-import { formatTime, escapeHtml, generateSkeleton, renderGrid, renderList } from './modules/mailboxes/render.js';
+import { formatTime, escapeHtml, generateSkeleton, renderGrid, renderList, setRebindAvailable } from './modules/mailboxes/render.js';
 
 injectDialogStyles();
 
@@ -154,6 +154,9 @@ function bindCardEvents() {
         case 'jump':
           showToast('跳转中...', 'info', 500);
           setTimeout(() => location.href = `/?mailbox=${encodeURIComponent(address)}`, 600);
+          break;
+        case 'rebind':
+          location.href = '/html/rebind.html?new_email=' + encodeURIComponent(address);
           break;
         case 'pin':
           try {
@@ -486,6 +489,8 @@ async function initGuestMode() {
     const sessionResp = await fetch('/api/session');
     if (sessionResp.ok) {
       const session = await sessionResp.json();
+      // 仅严格管理员在全部邮箱页可见换绑入口（后端仍做 getMailboxAccess 校验）
+      setRebindAvailable(session.strictAdmin === true);
       if (session.role === 'guest' || session.username === 'guest') {
         window.__GUEST_MODE__ = true;
         // 初始化 mock 数据
