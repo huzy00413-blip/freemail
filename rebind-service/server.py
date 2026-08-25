@@ -173,7 +173,7 @@ def _fetch_worker_proxies() -> list[str]:
         return []
     try:
         resp = _requests_mod.get(
-            f"{_WORKER_API_BASE}/api/rebind/proxies",
+            f"{_WORKER_API_BASE}/rebind/proxies",
             headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
             timeout=10,
         )
@@ -247,7 +247,7 @@ for _url in _file_proxies:
 if _file_proxies:
     print(f"[proxy] 文件代理池已加载 {len(_file_proxies)} 个代理", file=sys.stderr)
 if _WORKER_API_BASE:
-    print(f"[proxy] Worker 代理 API: {_WORKER_API_BASE}/api/rebind/proxies", file=sys.stderr)
+    print(f"[proxy] Worker 代理 API: {_WORKER_API_BASE}/rebind/proxies", file=sys.stderr)
 
 # 强制要求 token（fail-close）
 if not SERVICE_TOKEN:

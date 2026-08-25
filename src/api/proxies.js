@@ -1,14 +1,13 @@
 /**
- * 代理池管理 API
+ * 代理池管理 API（管理员接口）
  *
- * 管理员接口（严格管理员鉴权）：
+ * 严格管理员鉴权：
  *   GET    /api/admin/proxies          列出代理（脱敏，不含凭据）
  *   POST   /api/admin/proxies          添加代理
  *   PATCH  /api/admin/proxies/:id      启用/禁用
  *   DELETE /api/admin/proxies/:id      删除
  *
- * Python 服务接口（Bearer REBIND_SERVICE_TOKEN）：
- *   GET    /api/rebind/proxies         拉取启用的代理完整 URL 列表
+ * Python 服务拉取接口 GET /rebind/proxies 在 routes/rebind.js 中（公开路由，Bearer service token）。
  *
  * @module api/proxies
  */
@@ -76,23 +75,6 @@ export function normalizeProxy(value) {
  * 处理代理池 API 请求。
  */
 export async function handleProxiesApi(request, db, url, path, options) {
-  // ---- Python 服务拉取接口（Bearer REBIND_SERVICE_TOKEN）----
-  if (path === '/api/rebind/proxies' && request.method === 'GET') {
-    const auth = request.headers.get('Authorization') || '';
-    const expectedToken = options.rebindServiceToken || '';
-    if (!expectedToken || !auth.startsWith('Bearer ') || auth.slice(7).trim() !== expectedToken) {
-      return errorResponse('Unauthorized', 401);
-    }
-    try {
-      const { results } = await db.prepare(
-        'SELECT proxy_url FROM proxy_pool WHERE enabled = 1 ORDER BY id ASC'
-      ).all();
-      return jsonResponse({ proxies: (results || []).map(r => r.proxy_url) });
-    } catch (e) {
-      return errorResponse('查询代理池失败：' + e.message, 500);
-    }
-  }
-
   // ---- 管理员接口（严格管理员鉴权）----
   if (path.startsWith('/api/admin/proxies')) {
     if (!isStrictAdmin(request, options)) {

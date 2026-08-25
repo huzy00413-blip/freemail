@@ -226,4 +226,35 @@ router.post('/rebind/task-terminal', async (c) => {
   }
 });
 
+/**
+ * Python 服务拉取代理池：返回启用的代理完整 URL 列表。
+ * 鉴权：Authorization: Bearer <REBIND_SERVICE_TOKEN>
+ * 不需要用户登录。代理凭据仅返回给持有 service token 的 Python 服务。
+ */
+router.get('/rebind/proxies', async (c) => {
+  const expected = String(c.env.REBIND_SERVICE_TOKEN || '').trim();
+  const auth = String(c.req.header('Authorization') || '').trim();
+
+  if (!expected || auth !== `Bearer ${expected}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  let db;
+  try {
+    db = await getInitializedDatabase(c.env);
+  } catch (_) {
+    return c.json({ error: '数据库连接失败' }, 500);
+  }
+
+  try {
+    const { results } = await db.prepare(
+      'SELECT proxy_url FROM proxy_pool WHERE enabled = 1 ORDER BY id ASC'
+    ).all();
+    return c.json({ proxies: (results || []).map(r => r.proxy_url) });
+  } catch (e) {
+    console.error('[rebind] proxies 查询失败:', e);
+    return c.json({ error: '查询失败: ' + e.message }, 500);
+  }
+});
+
 export default router;
