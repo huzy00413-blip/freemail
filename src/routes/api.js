@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { getInitializedDatabase } from '../db/index.js';
 import { handleApiRequest } from '../api/index.js';
+import { getEnabledDomains } from '../api/domains.js';
 
 const router = new Hono();
 
@@ -31,7 +32,9 @@ router.all('/api/*', async (c) => {
   let DB;
   try { DB = await getInitializedDatabase(c.env); } catch (_) { return c.text('数据库连接失败', 500); }
 
-  const MAIL_DOMAINS = (c.env.MAIL_DOMAIN || 'temp.example.com').split(/[,\s]+/).map(d => d.trim()).filter(Boolean);
+  const ENV_DOMAINS = (c.env.MAIL_DOMAIN || 'temp.example.com').split(/[,\s]+/).map(d => d.trim()).filter(Boolean);
+  // 优先从 D1 mail_domains 表读取启用的域名，环境变量仅作回退
+  const MAIL_DOMAINS = await getEnabledDomains(DB, ENV_DOMAINS);
   const baseOpts = {
     mockOnly: false,
     resendApiKey: c.env.RESEND_API_KEY || c.env.RESEND_TOKEN || c.env.RESEND || '',

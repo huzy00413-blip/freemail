@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="precheck-hide">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>域名管理 - freemail</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script src="/js/theme-toggle.js"></script>
+  <script>
+    // 前端快速鉴权：仅严格管理员可访问
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => {
+          if (s && s.strictAdmin) {
+            try { document.documentElement.classList.remove('precheck-hide'); } catch(_) {}
+            return;
+          }
+          location.replace('/');
+        })
+        .catch(() => {
+          location.replace('/html/login.html?redirect=' + encodeURIComponent('/html/domains.html'));
+        });
+    })();
+  </script>
+  <style>
+    .domains-container { max-width: 800px; margin: 0 auto; padding: 24px 20px; }
+    .domains-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .domains-header h1 { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .domains-header .nav-links { display: flex; gap: 8px; }
+    .add-card { background: var(--card-bg, #fff); border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 20px; }
+    .add-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #333; }
+    .add-form { display: flex; gap: 10px; }
+    .add-form input {
+      flex: 1; padding: 10px 14px; border: 1px solid #dcdfe6; border-radius: 8px;
+      font-size: 14px; outline: none; transition: border-color 0.2s;
+    }
+    .add-form input:focus { border-color: #4f6ef7; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s, background 0.2s; }
+    .btn-primary { background: #4f6ef7; color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: #4f6ef7; }
+    .btn-ghost:hover { background: #f0f3ff; }
+    .btn-danger { background: #fef0f0; color: #f56c6c; }
+    .btn-danger:hover { background: #fde2e2; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .domain-list { background: var(--card-bg, #fff); border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); overflow: hidden; }
+    .domain-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid #f0f0f0;
+    }
+    .domain-item:last-child { border-bottom: none; }
+    .domain-info { display: flex; align-items: center; gap: 12px; }
+    .domain-name { font-size: 14px; font-weight: 500; }
+    .domain-meta { font-size: 12px; color: #999; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-on { background: #f0f9eb; color: #67c23a; }
+    .badge-off { background: #f4f4f5; color: #909399; }
+    .domain-actions { display: flex; gap: 6px; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
+    .toast {
+      position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px;
+      font-size: 14px; font-weight: 500; z-index: 9999; opacity: 0; transition: opacity 0.3s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .toast.show { opacity: 1; }
+    .toast-success { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+    .toast-error { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+  </style>
+</head>
+<body class="admin-page">
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      </span>
+      <span>域名管理</span>
+    </div>
+    <div class="nav-actions">
+      <a href="/html/admin.html" class="btn btn-ghost btn-sm">用户管理</a>
+      <a href="/html/mailboxes.html" class="btn btn-ghost btn-sm">邮箱列表</a>
+      <a href="/" class="btn btn-ghost btn-sm">返回邮箱</a>
+    </div>
+  </div>
+
+  <div class="domains-container">
+    <div class="domains-header">
+      <h1>🌐 邮件域名管理</h1>
+    </div>
+
+    <div class="add-card">
+      <h2>添加域名</h2>
+      <div class="add-form">
+        <input type="text" id="newDomain" placeholder="example.com" autocomplete="off" />
+        <button class="btn btn-primary" id="addBtn" onclick="addDomain()">添加</button>
+      </div>
+      <div style="font-size:12px;color:#999;margin-top:8px">添加后即可在创建邮箱时选择该域名，无需重新部署。</div>
+    </div>
+
+    <div class="domain-list" id="domainList">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show toast-' + (type || 'success');
+  setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+async function loadDomains() {
+  const list = document.getElementById('domainList');
+  try {
+    const r = await fetch('/api/admin/domains', { credentials: 'include' });
+    if (r.status === 403) { list.innerHTML = '<div class="empty-state">需要管理员权限</div>'; return; }
+    const d = await r.json();
+    const domains = d.domains || [];
+    if (!domains.length) {
+      list.innerHTML = '<div class="empty-state">暂无域名，请添加</div>';
+      return;
+    }
+    list.innerHTML = domains.map(item => `
+      <div class="domain-item">
+        <div class="domain-info">
+          <span class="domain-name">${escapeHtml(item.domain)}</span>
+          <span class="badge ${item.enabled ? 'badge-on' : 'badge-off'}">${item.enabled ? '已启用' : '已禁用'}</span>
+          <span class="domain-meta">${item.created_at ? '添加于 ' + escapeHtml(item.created_at) : ''}</span>
+        </div>
+        <div class="domain-actions">
+          <button class="btn btn-sm ${item.enabled ? 'btn-danger' : 'btn-primary'}" onclick="toggleDomain('${escapeAttr(item.domain)}', ${!item.enabled})">
+            ${item.enabled ? '禁用' : '启用'}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="deleteDomain('${escapeAttr(item.domain)}')">删除</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">加载失败：' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function addDomain() {
+  const input = document.getElementById('newDomain');
+  const domain = input.value.trim().toLowerCase();
+  if (!domain) { showToast('请输入域名', 'error'); return; }
+
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true; btn.textContent = '添加中...';
+  try {
+    const r = await fetch('/api/admin/domains', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ domain })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '添加失败');
+    showToast('域名已添加', 'success');
+    input.value = '';
+    loadDomains();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '添加';
+  }
+}
+
+async function toggleDomain(domain, enabled) {
+  try {
+    const r = await fetch('/api/admin/domains/' + encodeURIComponent(domain), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '操作失败');
+    showToast(enabled ? '已启用' : '已禁用', 'success');
+    loadDomains();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function deleteDomain(domain) {
+  if (!confirm(`确定删除域名 ${domain}？`)) return;
+  try {
+    const r = await fetch('/api/admin/domains/' + encodeURIComponent(domain), {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '删除失败');
+    showToast('域名已删除', 'success');
+    loadDomains();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) {
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+document.getElementById('newDomain').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addDomain(); }
+});
+
+loadDomains();
+</script>
+</body>
+</html>

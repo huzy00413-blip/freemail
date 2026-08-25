@@ -79,6 +79,7 @@ export function applySessionUI(session) {
     
     const adminLink = document.getElementById('admin');
     const allMailboxesLink = document.getElementById('all-mailboxes');
+    const domainsLink = document.getElementById('domains-link');
     
     if (session && (session.strictAdmin || session.role === 'guest')) {
       if (adminLink) adminLink.style.display = 'inline-flex';
@@ -87,6 +88,8 @@ export function applySessionUI(session) {
       if (adminLink) adminLink.style.display = 'none';
       if (allMailboxesLink) allMailboxesLink.style.display = 'none';
     }
+    // 域名管理仅严格管理员可见
+    if (domainsLink) domainsLink.style.display = session?.strictAdmin ? 'inline-flex' : 'none';
   } catch(_) {}
 }
 
