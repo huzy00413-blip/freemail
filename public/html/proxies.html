@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="precheck-hide">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>代理池管理 - freemail</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script src="/js/theme-toggle.js"></script>
+  <script>
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => {
+          if (s && s.strictAdmin) {
+            try { document.documentElement.classList.remove('precheck-hide'); } catch(_) {}
+            return;
+          }
+          location.replace('/');
+        })
+        .catch(() => {
+          location.replace('/html/login.html?redirect=' + encodeURIComponent('/html/proxies.html'));
+        });
+    })();
+  </script>
+  <style>
+    .proxies-container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+    .proxies-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .proxies-header h1 { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .stats-row { display: flex; gap: 16px; margin-bottom: 20px; }
+    .stat-mini { background: var(--card-bg, #fff); border-radius: 10px; padding: 14px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); flex: 1; text-align: center; }
+    .stat-mini .num { font-size: 24px; font-weight: 700; color: #4f6ef7; }
+    .stat-mini .lbl { font-size: 12px; color: #999; margin-top: 2px; }
+    .add-card { background: var(--card-bg, #fff); border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 20px; }
+    .add-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #333; }
+    .add-form { display: flex; gap: 10px; }
+    .add-form input {
+      flex: 1; padding: 10px 14px; border: 1px solid #dcdfe6; border-radius: 8px;
+      font-size: 14px; outline: none; transition: border-color 0.2s; font-family: monospace;
+    }
+    .add-form input:focus { border-color: #4f6ef7; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s, background 0.2s; }
+    .btn-primary { background: #4f6ef7; color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: #4f6ef7; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-ghost:hover { background: #f0f3ff; }
+    .btn-danger { background: #fef0f0; color: #f56c6c; }
+    .btn-danger:hover { background: #fde2e2; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-success { background: #f0f9eb; color: #67c23a; }
+    .btn-success:hover { background: #e1f3d8; }
+    .proxy-table { width: 100%; background: var(--card-bg, #fff); border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border-collapse: collapse; overflow: hidden; }
+    .proxy-table th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #999; text-transform: uppercase; border-bottom: 1px solid #f0f0f0; background: #fafbfc; }
+    .proxy-table td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #f5f5f5; }
+    .proxy-table tr:last-child td { border-bottom: none; }
+    .proxy-table tr:hover td { background: #fafbff; }
+    .proxy-host { font-family: monospace; font-weight: 500; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-on { background: #f0f9eb; color: #67c23a; }
+    .badge-off { background: #f4f4f5; color: #909399; }
+    .badge-ok { background: #f0f9eb; color: #67c23a; }
+    .badge-failed { background: #fef0f0; color: #f56c6c; }
+    .badge-unknown { background: #f4f4f5; color: #909399; }
+    .badge-socks5 { background: #ecf5ff; color: #409eff; }
+    .badge-http { background: #fdf6ec; color: #e6a23c; }
+    .actions-cell { display: flex; gap: 6px; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
+    .format-hint { font-size: 12px; color: #999; margin-top: 8px; line-height: 1.6; }
+    .format-hint code { background: #f5f7fa; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+    .toast {
+      position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px;
+      font-size: 14px; font-weight: 500; z-index: 9999; opacity: 0; transition: opacity 0.3s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .toast.show { opacity: 1; }
+    .toast-success { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+    .toast-error { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+  </style>
+</head>
+<body class="admin-page">
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      </span>
+      <span>代理池管理</span>
+    </div>
+    <div class="nav-actions">
+      <a href="/html/domains.html" class="btn btn-ghost btn-sm">域名管理</a>
+      <a href="/html/admin.html" class="btn btn-ghost btn-sm">用户管理</a>
+      <a href="/html/mailboxes.html" class="btn btn-ghost btn-sm">邮箱列表</a>
+      <a href="/" class="btn btn-ghost btn-sm">返回邮箱</a>
+    </div>
+  </div>
+
+  <div class="proxies-container">
+    <div class="proxies-header">
+      <h1>🔄 代理池管理</h1>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-mini"><div class="num" id="stat-total">0</div><div class="lbl">代理总数</div></div>
+      <div class="stat-mini"><div class="num" id="stat-enabled">0</div><div class="lbl">已启用</div></div>
+      <div class="stat-mini"><div class="num" id="stat-available">0</div><div class="lbl">可用</div></div>
+    </div>
+
+    <div class="add-card">
+      <h2>添加代理</h2>
+      <div class="add-form">
+        <input type="text" id="newProxy" placeholder="host:port:username:password 或 socks5h://user:pass@host:port" autocomplete="off" />
+        <button class="btn btn-primary" id="addBtn" onclick="addProxy()">添加</button>
+      </div>
+      <div class="format-hint">
+        支持格式：<code>host:port:user:pass</code>（默认 socks5h）、<code>socks5h://user:pass@host:port</code>、<code>http://user:pass@host:port</code>、<code>https://...</code>、<code>socks5://...</code><br>
+        推荐 <code>socks5h://</code>（DNS 解析也经由代理）。代理凭据不会返回给前端。
+      </div>
+    </div>
+
+    <table class="proxy-table">
+      <thead>
+        <tr>
+          <th>代理地址</th>
+          <th>类型</th>
+          <th>状态</th>
+          <th>检查结果</th>
+          <th>失败次数</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="proxyList">
+        <tr><td colspan="6" class="empty-state">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show toast-' + (type || 'success');
+  setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function schemeBadge(scheme) {
+  const cls = scheme.startsWith('socks') ? 'badge-socks5' : 'badge-http';
+  return `<span class="badge ${cls}">${escapeHtml(scheme)}</span>`;
+}
+
+function statusBadge(status) {
+  if (status === 'ok') return '<span class="badge badge-ok">正常</span>';
+  if (status === 'failed') return '<span class="badge badge-failed">失败</span>';
+  return '<span class="badge badge-unknown">未知</span>';
+}
+
+async function loadProxies() {
+  const tbody = document.getElementById('proxyList');
+  try {
+    const r = await fetch('/api/admin/proxies', { credentials: 'include' });
+    if (r.status === 403) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">需要管理员权限</td></tr>'; return; }
+    const d = await r.json();
+    const proxies = d.proxies || [];
+
+    document.getElementById('stat-total').textContent = proxies.length;
+    document.getElementById('stat-enabled').textContent = proxies.filter(p => p.enabled).length;
+    document.getElementById('stat-available').textContent = proxies.filter(p => p.enabled && p.last_check_status !== 'failed').length;
+
+    if (!proxies.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无代理，请添加</td></tr>';
+      return;
+    }
+    tbody.innerHTML = proxies.map(p => `
+      <tr>
+        <td class="proxy-host">${escapeHtml(p.proxy_display)}</td>
+        <td>${schemeBadge(p.proxy_scheme)}</td>
+        <td><span class="badge ${p.enabled ? 'badge-on' : 'badge-off'}">${p.enabled ? '已启用' : '已禁用'}</span></td>
+        <td>${statusBadge(p.last_check_status)}</td>
+        <td>${p.fail_count || 0}</td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn btn-sm ${p.enabled ? 'btn-danger' : 'btn-success'}" onclick="toggleProxy(${p.id}, ${!p.enabled})">
+              ${p.enabled ? '禁用' : '启用'}
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProxy(${p.id}, '${escapeHtml(p.proxy_display)}')">删除</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">加载失败：' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+async function addProxy() {
+  const input = document.getElementById('newProxy');
+  const proxy = input.value.trim();
+  if (!proxy) { showToast('请输入代理地址', 'error'); return; }
+
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true; btn.textContent = '添加中...';
+  try {
+    const r = await fetch('/api/admin/proxies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ proxy })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '添加失败');
+    showToast('代理已添加', 'success');
+    input.value = '';
+    loadProxies();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '添加';
+  }
+}
+
+async function toggleProxy(id, enabled) {
+  try {
+    const r = await fetch('/api/admin/proxies/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '操作失败');
+    showToast(enabled ? '已启用' : '已禁用', 'success');
+    loadProxies();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function deleteProxy(id, display) {
+  if (!confirm(`确定删除代理 ${display}？`)) return;
+  try {
+    const r = await fetch('/api/admin/proxies/' + id, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '删除失败');
+    showToast('代理已删除', 'success');
+    loadProxies();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+document.getElementById('newProxy').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); addProxy(); }
+});
+
+loadProxies();
+</script>
+</body>
+</html>

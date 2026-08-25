@@ -135,6 +135,65 @@ docker run -d \
 | `HOST` | 否 | 127.0.0.1 | 监听地址 |
 | `PORT` | 否 | 8000 | 监听端口 |
 
+## 代理池配置
+
+### 代理格式
+
+支持以下格式（每行一个，或逗号分隔）：
+
+- `host:port:username:password` — 无 scheme 时默认按 `PROXY_DEFAULT_SCHEME` 补全
+- `http://user:password@host:port`
+- `https://user:password@host:port`
+- `socks5://user:password@host:port`
+- `socks5h://user:password@host:port`（**推荐**，DNS 解析也经由代理）
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PROXY_POOL` | 空 | 逗号分隔代理列表，或 `@/path/to/proxies.txt` 表示文件 |
+| `PROXY_DEFAULT_SCHEME` | `socks5h` | 无 scheme 代理的默认协议 |
+| `REBIND_MAX_PROXY_FAILURES` | 5 | 连续失败多少次后标记不可用 |
+| `REBIND_PROXY_CHECK_TIMEOUT` | 5 | 代理连通性检查超时（秒） |
+| `REBIND_PROXY_RECHECK_INTERVAL` | 300 | 不可用代理重新检查间隔（秒） |
+| `REBIND_WORKER_API_BASE` | 自动推导 | Worker API 基址，用于从 D1 拉取代理池 |
+| `REBIND_PROXY_REFRESH_INTERVAL` | 300 | 从 Worker 刷新代理池间隔（秒） |
+
+### Render Secret File 配置
+
+在 Render 控制台添加 Secret File：
+
+- **Filename**: `/etc/secrets/proxies.txt`
+- **Contents**: 每行一个代理，例如：
+  ```
+  socks5h://user:pass@proxy1.example.com:1080
+  http://user:pass@proxy2.example.com:8080
+  1.2.3.4:1080:myuser:mypass
+  ```
+
+然后设置环境变量 `PROXY_POOL=@/etc/secrets/proxies.txt`。
+
+### Worker D1 代理池（推荐）
+
+代理也可在 freemail 管理后台"代理池管理"页面添加，Python 服务会自动从 Worker API 拉取并每 5 分钟刷新，与文件代理合并去重。无需重新部署 Render 服务。
+
+### 验证
+
+访问 `/health` 确认：
+
+```json
+{
+  "status": "ok",
+  "proxy_pool_enabled": true,
+  "proxy_total": 3,
+  "proxy_available": 2
+}
+```
+
+### ⚠️ curl-cffi 与 SOCKS5 注意事项
+
+代理连通性检查使用 `requests` + `PySocks`，支持 `socks5://` 和 `socks5h://`。但实际换绑请求由 `curl-cffi`（C 扩展）发起，其对 SOCKS5 的支持取决于底层 libcurl 编译选项。如换绑请求在 SOCKS5 代理下失败，请改用 HTTP 代理出口。
+
 ## 安全提示
 
 - 账号密码、TOTP 密钥仅在请求体中传输，**务必使用 HTTPS**

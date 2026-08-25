@@ -35,7 +35,7 @@ import traceback
 from collections import deque
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,15 +81,71 @@ MAX_PROXY_FAILURES = int(os.environ.get("REBIND_MAX_PROXY_FAILURES", "5"))
 PROXY_CHECK_TIMEOUT = float(os.environ.get("REBIND_PROXY_CHECK_TIMEOUT", "5"))
 PROXY_TEST_URL = os.environ.get("REBIND_PROXY_TEST_URL", "https://auth.openai.com/")
 PROXY_RECHECK_INTERVAL = int(os.environ.get("REBIND_PROXY_RECHECK_INTERVAL", "300"))
+
+# 代理格式支持
+# 无 scheme 的 host:port:user:pass 默认按 PROXY_DEFAULT_SCHEME 补全（推荐 socks5h，DNS 也走代理）
+PROXY_DEFAULT_SCHEME = os.environ.get("PROXY_DEFAULT_SCHEME", "socks5h").strip().lower()
+SUPPORTED_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
+
+# Worker API 基址（用于从 D1 拉取代理池）
+# 优先使用 REBIND_WORKER_API_BASE；否则从 WORKER_TASK_CALLBACK_URL 推导（去掉 /rebind/task-terminal 后缀）
+_WORKER_API_BASE = os.environ.get("REBIND_WORKER_API_BASE", "").strip().rstrip("/")
+if not _WORKER_API_BASE and WORKER_TASK_CALLBACK_URL:
+    _WORKER_API_BASE = WORKER_TASK_CALLBACK_URL.replace("/rebind/task-terminal", "").rstrip("/")
+PROXY_REFRESH_INTERVAL = int(os.environ.get("REBIND_PROXY_REFRESH_INTERVAL", "300"))  # 5 分钟
+
+
+def normalize_proxy(value: str) -> str:
+    """
+    将多种代理格式归一化为 scheme://user:pass@host:port。
+
+    支持：
+      - host:port:username:password  （默认 scheme 由 PROXY_DEFAULT_SCHEME 决定）
+      - http://user:pass@host:port
+      - https://user:pass@host:port
+      - socks5://user:pass@host:port
+      - socks5h://user:pass@host:port （推荐，DNS 解析也经由代理）
+
+    空行或 # 开头的注释行返回空字符串。格式错误抛出 ValueError。
+    """
+    value = value.strip()
+    if not value or value.startswith("#"):
+        return ""
+    if "://" in value:
+        parsed = urlparse(value)
+        if parsed.scheme.lower() not in SUPPORTED_PROXY_SCHEMES:
+            raise ValueError(f"Unsupported proxy scheme: {parsed.scheme}")
+        if not parsed.hostname or not parsed.port:
+            raise ValueError("Invalid proxy URL: missing host or port")
+        return value
+    # host:port:username:password 格式
+    parts = value.split(":", 3)
+    if len(parts) != 4:
+        raise ValueError("Expected host:port:username:password or scheme:// URL")
+    host, port, username, password = parts
+    if not all((host, port, username, password)):
+        raise ValueError("Expected host:port:username:password")
+    if PROXY_DEFAULT_SCHEME not in SUPPORTED_PROXY_SCHEMES:
+        raise ValueError(f"Invalid PROXY_DEFAULT_SCHEME: {PROXY_DEFAULT_SCHEME}")
+    return (
+        f"{PROXY_DEFAULT_SCHEME}://"
+        f"{quote(username, safe='')}:"
+        f"{quote(password, safe='')}@{host}:{port}"
+    )
 # ---------------------------------------------------------------------------
 # 代理池（带连通性检查、失败计数、空池拒绝）
+# 代理来源：1) PROXY_POOL 文件/环境变量  2) Worker D1 API（定时刷新），合并去重
 # ---------------------------------------------------------------------------
-_PROXY_POOL_ENABLED = bool(_PROXY_POOL_RAW)
+_PROXY_POOL_ENABLED = bool(_PROXY_POOL_RAW) or bool(_WORKER_API_BASE)
 # 每个代理的状态：{url, fail_count, available, last_check, in_use}
 _proxies: list[dict[str, Any]] = []
 _proxy_lock = threading.Lock()
 
-if _PROXY_POOL_ENABLED:
+
+def _load_file_proxies() -> list[str]:
+    """从 PROXY_POOL 环境变量或文件加载代理并归一化。"""
+    if not _PROXY_POOL_RAW:
+        return []
     if _PROXY_POOL_RAW.startswith("@"):
         _f = Path(_PROXY_POOL_RAW[1:]).expanduser()
         if _f.is_file():
@@ -99,15 +155,99 @@ if _PROXY_POOL_ENABLED:
             _raw_list = []
     else:
         _raw_list = [p.strip() for p in _PROXY_POOL_RAW.split(",") if p.strip()]
-    for _url in _raw_list:
-        _proxies.append({
-            "url": _url,
-            "fail_count": 0,
-            "available": True,
-            "last_check": 0,
-            "in_use": False,
-        })
-    print(f"[proxy] 代理池已加载 {len(_proxies)} 个代理", file=sys.stderr)
+
+    _normalized = []
+    for line in _raw_list:
+        try:
+            proxy = normalize_proxy(line)
+            if proxy:
+                _normalized.append(proxy)
+        except ValueError as exc:
+            print(f"[proxy] Ignored invalid proxy: {exc}", file=sys.stderr)
+    return list(dict.fromkeys(_normalized))  # 去重保序
+
+
+def _fetch_worker_proxies() -> list[str]:
+    """从 Worker /api/rebind/proxies 拉取启用的代理列表（Bearer REBIND_SERVICE_TOKEN）。"""
+    if not _WORKER_API_BASE:
+        return []
+    try:
+        resp = _requests_mod.get(
+            f"{_WORKER_API_BASE}/api/rebind/proxies",
+            headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            urls = data.get("proxies", [])
+            # Worker 返回的已是归一化 URL，再做一次校验
+            valid = []
+            for u in urls:
+                try:
+                    p = normalize_proxy(u)
+                    if p:
+                        valid.append(p)
+                except ValueError:
+                    pass
+            return valid
+        print(f"[proxy] Worker 代理拉取返回 {resp.status_code}", file=sys.stderr)
+    except Exception as e:
+        print(f"[proxy] Worker 代理拉取失败: {e}", file=sys.stderr)
+    return []
+
+
+def _merge_proxies(file_urls: list[str], worker_urls: list[str]) -> None:
+    """合并文件代理和 Worker 代理（去重），保留已有代理的状态。"""
+    all_urls = list(dict.fromkeys(file_urls + worker_urls))
+    with _proxy_lock:
+        existing = {p["url"]: p for p in _proxies}
+        new_proxies = []
+        for url in all_urls:
+            if url in existing:
+                new_proxies.append(existing[url])  # 保留状态
+            else:
+                new_proxies.append({
+                    "url": url,
+                    "fail_count": 0,
+                    "available": True,
+                    "last_check": 0,
+                    "in_use": False,
+                })
+        removed = set(existing.keys()) - set(all_urls)
+        _proxies[:] = new_proxies
+    if removed:
+        print(f"[proxy] 移除 {len(removed)} 个已删除的代理", file=sys.stderr)
+
+
+def _refresh_worker_proxies() -> None:
+    """后台线程：定期从 Worker 拉取代理池并合并。"""
+    while not _cleanup_stop.is_set():
+        try:
+            worker_urls = _fetch_worker_proxies()
+            if worker_urls:
+                file_urls = _load_file_proxies()
+                _merge_proxies(file_urls, worker_urls)
+                with _proxy_lock:
+                    print(f"[proxy] Worker 代理刷新完成，共 {len(_proxies)} 个代理", file=sys.stderr)
+        except Exception as e:
+            print(f"[proxy] 代理刷新异常: {e}", file=sys.stderr)
+        _cleanup_stop.wait(PROXY_REFRESH_INTERVAL)
+
+
+# 初始加载文件代理
+_file_proxies = _load_file_proxies()
+for _url in _file_proxies:
+    _proxies.append({
+        "url": _url,
+        "fail_count": 0,
+        "available": True,
+        "last_check": 0,
+        "in_use": False,
+    })
+if _file_proxies:
+    print(f"[proxy] 文件代理池已加载 {len(_file_proxies)} 个代理", file=sys.stderr)
+if _WORKER_API_BASE:
+    print(f"[proxy] Worker 代理 API: {_WORKER_API_BASE}/api/rebind/proxies", file=sys.stderr)
 
 # 强制要求 token（fail-close）
 if not SERVICE_TOKEN:
@@ -624,6 +764,26 @@ _cleanup_thread.start()
 if _PROXY_POOL_ENABLED:
     _proxy_recheck_thread = threading.Thread(target=_recheck_disabled_proxies, daemon=True)
     _proxy_recheck_thread.start()
+    # 启动 Worker 代理池定时刷新线程
+    if _WORKER_API_BASE:
+        _proxy_refresh_thread = threading.Thread(target=_refresh_worker_proxies, daemon=True)
+        _proxy_refresh_thread.start()
+        # 启动时立即拉取一次（不阻塞主流程）
+        def _initial_fetch():
+            worker_urls = _fetch_worker_proxies()
+            if worker_urls:
+                _merge_proxies(_load_file_proxies(), worker_urls)
+                with _proxy_lock:
+                    print(f"[proxy] 初始 Worker 代理拉取完成，共 {len(_proxies)} 个代理", file=sys.stderr)
+        threading.Thread(target=_initial_fetch, daemon=True).start()
+
+# ---------------------------------------------------------------------------
+# 关于 curl-cffi 与 SOCKS5 代理的说明：
+# requests + PySocks 支持 socks5:// 和 socks5h:// 代理（用于连通性检查 _check_proxy_connectivity）。
+# 但 curl-cffi（rebind_core 实际换绑请求使用）对 SOCKS5 的支持取决于其底层 libcurl 编译选项。
+# 如换绑请求在 SOCKS5 代理下失败，请改用 HTTP 代理出口，或在 rebind_core 中确认 curl-cffi 代理配置。
+# 连通性检查（requests）成功不代表 curl-cffi 实际请求也支持 SOCKS5。
+# ---------------------------------------------------------------------------
 
 
 def verify_token(authorization: str | None = Header(default=None)) -> None:
