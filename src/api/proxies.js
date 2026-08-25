@@ -182,14 +182,14 @@ export async function handleProxiesApi(request, db, url, path, options) {
         }
       }
 
-      // 通知 Python 服务立即刷新代理池（不阻塞响应，失败不影响添加结果）
+      // 通知 Python 服务立即刷新代理池（fire-and-forget，5秒超时，失败不影响添加结果）
       if (added > 0 && options.rebindServiceUrl && options.rebindServiceToken) {
-        try {
-          await fetch(`${options.rebindServiceUrl.replace(/\/+$/, '')}/admin/proxies/refresh`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${options.rebindServiceToken}` },
-          });
-        } catch (_) { /* 刷新失败可稍后手动刷新 */ }
+        const refreshUrl = `${options.rebindServiceUrl.replace(/\/+$/, '')}/admin/proxies/refresh`;
+        fetch(refreshUrl, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${options.rebindServiceToken}` },
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => {});
       }
 
       return jsonResponse({
