@@ -15,15 +15,22 @@ database_id = "66317a51-8e94-47f7-b92c-fd70cf170807" # 你的database_id
 # FORWARD_RULES="[{"prefix":"vip","email":"a@example.com"},{"prefix":"*","email":"example@qq.com"}]"
 ADMIN_NAME=""
 ADMIN_PASSWORD=""
-GUEST_PASSWORD="guest"
-JWT_TOKEN="dfvhluhdaslufhvdv"
-JWT_TOKENGUEST_PASSWORD="dfsfsfxzcv"
+# 以下敏感变量禁止在代码中硬编码，必须通过 wrangler secret put 设置：
+#   JWT_TOKEN        JWT 签名密钥（同时也是 root admin token，泄露后必须轮换）
+#   GUEST_PASSWORD   访客登录密码（不设置则禁用访客登录）
 SESSION_EXPIRE_DAYS="365"
 MAIL_DOMAIN="你的域名列表"
 WORKER_ORIGIN="https://mailfree.1842068403.workers.dev"
 RESEND_API_KEY="RESEND发件密钥"
 SENDFLARE_API_KEY="SENDFLARE发件密钥"
 CYBERPERSONS_API_KEY="CYBERPERSONS发件密钥"
+
+# ChatGPT 换绑邮箱功能（调用独立部署的 Python 服务）
+# 以下变量包含敏感信息，请勿在此硬编码，使用 wrangler secret put 设置：
+#   REBIND_SERVICE_URL      Python 换绑服务的公网 HTTPS 地址
+#   REBIND_SERVICE_TOKEN    与 Python 服务的 REBIND_SERVICE_TOKEN 一致
+#   REBIND_CALLBACK_TOKEN   Python 终态回调鉴权 token（与 Python 端一致）
+# WORKER_ORIGIN 不是机密，已在上方 [vars] 中配置为普通变量。
 
 
 # 静态资源目录（Workers + Assets）

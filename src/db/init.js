@@ -48,6 +48,8 @@ async function performFirstTimeSetup(db) {
     // 所有5个必要表都存在，执行字段迁移
     await migrateMailboxesFields(db);
     await migrateSentEmailsFields(db);
+    // 确保换绑功能相关表存在（向后兼容已有数据库）
+    await ensureRebindTables(db);
     return;
   } catch (e) {
     // 有表不存在，继续初始化
@@ -60,6 +62,12 @@ async function performFirstTimeSetup(db) {
   await db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT, role TEXT NOT NULL DEFAULT 'user', can_send INTEGER NOT NULL DEFAULT 0, mailbox_limit INTEGER NOT NULL DEFAULT 10, created_at TEXT DEFAULT CURRENT_TIMESTAMP);");
   await db.exec("CREATE TABLE IF NOT EXISTS user_mailboxes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, mailbox_id INTEGER NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, is_pinned INTEGER NOT NULL DEFAULT 0, UNIQUE(user_id, mailbox_id), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
   await db.exec("CREATE TABLE IF NOT EXISTS sent_emails (id INTEGER PRIMARY KEY AUTOINCREMENT, resend_id TEXT, from_name TEXT, from_addr TEXT NOT NULL, to_addrs TEXT NOT NULL, subject TEXT NOT NULL, html_content TEXT, text_content TEXT, status TEXT DEFAULT 'queued', scheduled_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, provider TEXT NOT NULL DEFAULT 'resend');");
+
+  // ChatGPT 换绑任务表（绑定用户身份）
+  await db.exec("CREATE TABLE IF NOT EXISTS rebind_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL UNIQUE, user_id INTEGER, username TEXT, old_email TEXT, new_email TEXT, status TEXT DEFAULT 'created', idempotency_key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);");
+
+  // 换绑收信一次性 token（短期、绑定 user+mailbox+task）
+  await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
   
   // 创建索引
   await createIndexes(db);
@@ -83,6 +91,12 @@ async function createIndexes(db) {
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_sent_emails_resend_id ON sent_emails(resend_id);`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_sent_emails_status_created ON sent_emails(status, created_at DESC);`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_sent_emails_from_addr ON sent_emails(from_addr);`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_task_id ON rebind_tasks(task_id);`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_user_id ON rebind_tasks(user_id);`);
+  await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rebind_tasks_active_idempotency ON rebind_tasks(COALESCE(user_id, -1), idempotency_key) WHERE status IN ('created', 'running', 'waiting_code');`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_token ON rebind_inbox_tokens(token);`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_mailbox ON rebind_inbox_tokens(mailbox_id);`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_expires ON rebind_inbox_tokens(expires_at);`);
 }
 
 /**
@@ -132,6 +146,29 @@ async function migrateSentEmailsFields(db) {
   } catch (error) {
     console.error('sent_emails 字段迁移失败:', error);
     // 不抛出异常，允许继续运行
+  }
+}
+
+/**
+ * 确保换绑功能相关表存在（仅建表，不做字段迁移）。
+ * 字段迁移通过 migrations/0001_rebind_tables.sql 显式执行。
+ * config 端点通过 PRAGMA table_info 检查字段是否完整。
+ * @param {object} db - 数据库连接对象
+ * @returns {Promise<void>}
+ */
+async function ensureRebindTables(db) {
+  try {
+    await db.exec("CREATE TABLE IF NOT EXISTS rebind_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL UNIQUE, user_id INTEGER, username TEXT, old_email TEXT, new_email TEXT, status TEXT DEFAULT 'created', idempotency_key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);");
+    await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_task_id ON rebind_tasks(task_id);`);
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_user_id ON rebind_tasks(user_id);`);
+    await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rebind_tasks_active_idempotency ON rebind_tasks(COALESCE(user_id, -1), idempotency_key) WHERE status IN ('created', 'running', 'waiting_code');`);
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_token ON rebind_inbox_tokens(token);`);
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_mailbox ON rebind_inbox_tokens(mailbox_id);`);
+    await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_expires ON rebind_inbox_tokens(expires_at);`);
+  } catch (error) {
+    console.error('rebind 表初始化失败:', error);
+    // 不抛出异常，config 端点会检测表不可用并返回 enabled: false
   }
 }
 

@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import staticRoutes from './routes/static.js';
 import shareRoutes from './routes/share.js';
+import rebindPublicRoutes from './routes/rebind.js';
 import { handleEmailEvent } from './email/handler.js';
 
 const app = new Hono();
@@ -30,6 +31,9 @@ app.route('/', authRoutes);
 
 // 公开分享路由（无需登录）
 app.route('/', shareRoutes);
+
+// 换绑功能公开路由（收信端点，供 Python 服务轮询，独立 token 鉴权）
+app.route('/', rebindPublicRoutes);
 
 // 认证中间件
 app.use('/api/*', authMiddleware());

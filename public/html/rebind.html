@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChatGPT 换绑邮箱 - freemail</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f7fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    .container { max-width: 640px; margin: 0 auto; }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header a { color: #4f6ef7; text-decoration: none; font-size: 14px; }
+    .card {
+      background: #fff; border-radius: 14px; padding: 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .card h2 { font-size: 17px; margin-bottom: 20px; color: #333; }
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block; font-size: 13px; font-weight: 600; color: #555;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%; padding: 10px 14px; border: 1px solid #dcdfe6;
+      border-radius: 8px; font-size: 14px; outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus { border-color: #4f6ef7; }
+    .form-group .hint { font-size: 12px; color: #999; margin-top: 4px; }
+    .btn {
+      display: inline-block; padding: 11px 28px; border: none;
+      border-radius: 8px; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    .btn-primary { background: #4f6ef7; color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+    .btn-danger { background: #f56c6c; color: #fff; margin-left: 10px; }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-danger:disabled { background: #f8b4b4; cursor: not-allowed; }
+    .status-box {
+      margin-top: 24px; padding: 18px; border-radius: 10px;
+      background: #f8f9fb; border: 1px solid #e8eaed;
+      display: none;
+    }
+    .status-box.show { display: block; }
+    .status-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+    .log-area {
+      background: #1e1e2e; color: #cdd6f4; padding: 14px;
+      border-radius: 8px; font-family: "Cascadia Code", "Fira Code", monospace;
+      font-size: 12px; line-height: 1.6; max-height: 300px;
+      overflow-y: auto; margin-top: 12px; white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .result-box {
+      margin-top: 16px; padding: 14px; border-radius: 8px;
+      background: #f0f9eb; border: 1px solid #e1f3d8;
+    }
+    .result-box.fail { background: #fef0f0; border-color: #fde2e2; }
+    .result-box .row { margin-bottom: 8px; font-size: 13px; }
+    .result-box .row span:first-child { color: #888; display: inline-block; width: 120px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-created { background: #fdf6ec; color: #e6a23c; }
+    .badge-running { background: #ecf5ff; color: #409eff; }
+    .badge-waiting_code { background: #f0f0ff; color: #7c5cfc; }
+    .badge-success { background: #f0f9eb; color: #67c23a; }
+    .badge-failed { background: #fef0f0; color: #f56c6c; }
+    .badge-cancelled { background: #f4f4f5; color: #909399; }
+    .badge-expired { background: #fdf6ec; color: #e6a23c; }
+    .not-enabled { text-align: center; padding: 40px 20px; color: #999; }
+    .not-enabled h3 { margin-bottom: 10px; color: #666; }
+    .action-row { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔄 ChatGPT 换绑邮箱</h1>
+      <a href="/">← 返回邮箱</a>
+    </div>
+    <div class="card" id="formCard">
+      <div id="notEnabled" class="not-enabled" style="display:none">
+        <h3>换绑功能未启用</h3>
+        <p style="font-size:13px" id="notEnabledReason">请配置 REBIND_SERVICE_URL 后重新部署。</p>
+      </div>
+      <div id="formBody">
+        <h2>填写换绑信息</h2>
+        <div class="form-group">
+          <label>旧邮箱</label>
+          <input type="email" id="oldEmail" placeholder="old@example.com" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input type="password" id="password" placeholder="ChatGPT 账号密码" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label>TOTP 密钥（Base32）</label>
+          <input type="text" id="totpSecret" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
+          <div class="hint">两步验证的密钥，非 6 位动态码</div>
+        </div>
+        <div class="form-group">
+          <label>新邮箱（必须是 freemail 中已存在的邮箱）</label>
+          <input type="email" id="newEmail" placeholder="new@yourdomain.com" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <div class="hint">代理由服务端统一配置，无需手动填写。</div>
+        </div>
+        <button class="btn btn-primary" id="submitBtn" onclick="startRebind()">开始换绑</button>
+      </div>
+    </div>
+
+    <div class="status-box" id="statusBox">
+      <div class="status-title">
+        任务状态：<span id="statusBadge" class="badge badge-created">created</span>
+        <span id="taskIdLabel" style="font-size:12px;color:#999;margin-left:10px"></span>
+      </div>
+      <div class="log-area" id="logArea">等待提交...</div>
+      <div id="resultArea"></div>
+      <div class="action-row" id="actionRow" style="display:none">
+        <button class="btn btn-danger" id="cancelBtn" onclick="cancelTask()">取消任务</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let pollTimer = null;
+let currentTaskId = null;
+const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled', 'expired']);
+
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/session', { credentials: 'include' });
+    if (!r.ok) { window.location.replace('/html/login.html?redirect=/html/rebind.html'); return false; }
+    return true;
+  } catch (_) { window.location.replace('/html/login.html'); return false; }
+}
+
+async function checkEnabled() {
+  try {
+    const r = await fetch('/api/rebind/config', { credentials: 'include' });
+    if (r.ok) {
+      const d = await r.json();
+      if (!d.enabled) {
+        document.getElementById('formBody').style.display = 'none';
+        document.getElementById('notEnabled').style.display = 'block';
+        if (d.reason) {
+          document.getElementById('notEnabledReason').textContent = d.reason;
+        }
+        return false;
+      }
+    }
+  } catch (_) {}
+  return true;
+}
+
+function log(msg) {
+  const area = document.getElementById('logArea');
+  const t = new Date().toLocaleTimeString();
+  area.textContent += `[${t}] ${msg}\n`;
+  area.scrollTop = area.scrollHeight;
+}
+
+function setStatus(status) {
+  const badge = document.getElementById('statusBadge');
+  badge.className = 'badge badge-' + status;
+  badge.textContent = status;
+}
+
+function showCancelButton(show) {
+  document.getElementById('actionRow').style.display = show ? 'block' : 'none';
+}
+
+async function startRebind() {
+  const oldEmail = document.getElementById('oldEmail').value.trim();
+  const password = document.getElementById('password').value;
+  const totpSecret = document.getElementById('totpSecret').value.trim();
+  const newEmail = document.getElementById('newEmail').value.trim().toLowerCase();
+
+  if (!oldEmail || !password || !totpSecret || !newEmail) {
+    alert('请填写所有必填字段'); return;
+  }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = '提交中...';
+
+  document.getElementById('statusBox').classList.add('show');
+  document.getElementById('logArea').textContent = '';
+  document.getElementById('resultArea').innerHTML = '';
+  setStatus('created');
+  showCancelButton(false);
+  log('正在提交换绑任务...');
+
+  try {
+    const r = await fetch('/api/rebind/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ old_email: oldEmail, password, totp_secret: totpSecret, new_email: newEmail })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.success) {
+      throw new Error(d.error || '提交失败');
+    }
+    currentTaskId = d.task_id;
+    document.getElementById('taskIdLabel').textContent = 'task: ' + currentTaskId.slice(0, 12) + '...';
+    log('任务已提交，开始轮询状态...');
+    showCancelButton(true);
+    pollStatus(currentTaskId);
+  } catch (e) {
+    log('错误：' + e.message);
+    setStatus('failed');
+    btn.disabled = false; btn.textContent = '开始换绑';
+  }
+}
+
+async function cancelTask() {
+  if (!currentTaskId) return;
+  const btn = document.getElementById('cancelBtn');
+  btn.disabled = true; btn.textContent = '取消中...';
+  log('正在取消任务...');
+  try {
+    const r = await fetch('/api/rebind/cancel/' + currentTaskId, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || '取消失败');
+    log('任务已取消');
+    setStatus(d.status || 'cancelled');
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    showCancelButton(false);
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').textContent = '开始换绑';
+  } catch (e) {
+    log('取消失败：' + e.message);
+    btn.disabled = false; btn.textContent = '取消任务';
+  }
+}
+
+async function pollStatus(taskId) {
+  if (pollTimer) clearInterval(pollTimer);
+  let attempts = 0;
+  const maxAttempts = 150; // 最多轮询 150 * 2s = 300s
+
+  pollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(pollTimer);
+      log('轮询超时，请稍后手动刷新页面查看');
+      showCancelButton(false);
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').textContent = '开始换绑';
+      return;
+    }
+    try {
+      const r = await fetch('/api/rebind/status/' + taskId, { credentials: 'include' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || d.detail || ('HTTP ' + r.status));
+
+      setStatus(d.status || 'unknown');
+
+      if (d.status === 'running') {
+        log('换绑进行中...');
+      } else if (d.status === 'waiting_code') {
+        log('等待验证码邮件...');
+      } else if (TERMINAL_STATUSES.has(d.status)) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        showCancelButton(false);
+        if (d.status === 'success') {
+          log('换绑成功！');
+          showResult(d, true);
+        } else if (d.status === 'cancelled') {
+          log('任务已取消');
+        } else if (d.status === 'expired') {
+          log('任务超时过期');
+          showResult(d, false);
+        } else {
+          log('换绑失败：' + (d.error || d.message || '未知错误'));
+          showResult(d, false);
+        }
+        document.getElementById('submitBtn').disabled = false;
+        document.getElementById('submitBtn').textContent = '开始换绑';
+      }
+    } catch (e) {
+      log('查询状态出错：' + e.message);
+    }
+  }, 2000);
+}
+
+function showResult(d, success) {
+  const area = document.getElementById('resultArea');
+  if (success) {
+    area.innerHTML = `
+      <div class="result-box">
+        <div class="row"><span>新邮箱：</span><span>${escapeHtml(d.session_email || d.new_email || '')}</span></div>
+        <div class="row"><span>Access Token：</span><span>${escapeHtml(d.access_token_masked || '')}</span></div>
+        <div class="row" style="font-size:11px;color:#999;margin-top:8px">
+          完整 session / access_token 已在任务结束后从服务端删除，出于安全考虑不在此页面显示。
+        </div>
+      </div>`;
+  } else {
+    area.innerHTML = `
+      <div class="result-box fail">
+        <div class="row"><span>错误码：</span><span>${escapeHtml(d.code || '')}</span></div>
+        <div class="row"><span>错误信息：</span><span>${escapeHtml(d.message || d.error || '')}</span></div>
+      </div>`;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// 初始化
+(async function init() {
+  const authed = await checkAuth();
+  if (authed) await checkEnabled();
+})();
+</script>
+</body>
+</html>

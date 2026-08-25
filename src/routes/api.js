@@ -40,6 +40,8 @@ router.all('/api/*', async (c) => {
     adminName: String(c.env.ADMIN_NAME || 'admin').trim().toLowerCase(),
     r2: c.env.MAIL_EML,
     workerOrigin: c.env.WORKER_ORIGIN || '',
+    rebindServiceUrl: c.env.REBIND_SERVICE_URL || '',
+    rebindServiceToken: c.env.REBIND_SERVICE_TOKEN || '',
     authPayload
   };
 
