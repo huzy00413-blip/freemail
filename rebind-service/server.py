@@ -57,13 +57,13 @@ except Exception as exc:  # pragma: no cover
     print("       请确认 rebind_core/ 与 registration_core/ 位于:", CORE_DIR, file=sys.stderr)
     run_rebind_email = None  # type: ignore
 
-# curl_cffi 用于代理连通性检测（与实际换绑请求使用相同的 TLS 栈）
+# curl_cffi 用于代理连通性检测（与实际换绑请求使用相同的 TLS 栈和 SOCKS5 实现）。
+# 不提供 requests 降级：requests 检测成功不代表 curl_cffi 实际换绑请求成功。
 try:
     from curl_cffi.requests import Session as CffiSession
     _HAS_CFFI = True
 except ImportError:
     _HAS_CFFI = False
-    print("[WARN] curl_cffi 不可用，代理检测将降级到 requests", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # 配置（启动时校验）
@@ -176,8 +176,12 @@ def _load_file_proxies() -> list[str]:
     return list(dict.fromkeys(_normalized))  # 去重保序
 
 
-def _fetch_worker_proxies() -> list[str]:
-    """从 Worker /api/rebind/proxies 拉取启用的代理列表（Bearer REBIND_SERVICE_TOKEN）。"""
+def _fetch_worker_proxies() -> list[str] | None:
+    """从 Worker /rebind/proxies 拉取启用的代理列表（Bearer REBIND_SERVICE_TOKEN）。
+
+    返回 None 表示拉取失败（调用方应保留旧池）；
+    返回 [] 表示拉取成功但无启用代理（调用方应清空池）。
+    """
     if not _WORKER_API_BASE:
         return []
     try:
@@ -197,12 +201,13 @@ def _fetch_worker_proxies() -> list[str]:
                     if p:
                         valid.append(p)
                 except ValueError:
-                    pass
+                    print(f"[proxy] Worker 返回了无效代理，已跳过", file=sys.stderr)
             return valid
-        print(f"[proxy] Worker 代理拉取返回 {resp.status_code}", file=sys.stderr)
+        print(f"[proxy] Worker 代理拉取返回 HTTP {resp.status_code}，保留旧池", file=sys.stderr)
+        return None
     except Exception as e:
-        print(f"[proxy] Worker 代理拉取失败: {e}", file=sys.stderr)
-    return []
+        print(f"[proxy] Worker 代理拉取失败，保留旧池: {type(e).__name__}", file=sys.stderr)
+        return None
 
 
 def _merge_proxies(file_urls: list[str], worker_urls: list[str]) -> None:
@@ -229,17 +234,20 @@ def _merge_proxies(file_urls: list[str], worker_urls: list[str]) -> None:
 
 
 def _refresh_worker_proxies() -> None:
-    """后台线程：定期从 Worker 拉取代理池并合并。"""
+    """后台线程：定期从 Worker 拉取代理池并原子替换。
+
+    拉取失败（返回 None）时保留旧池并记录日志；拉取成功（含空列表）才替换。
+    """
     while not _cleanup_stop.is_set():
         try:
             worker_urls = _fetch_worker_proxies()
-            if worker_urls:
+            if worker_urls is not None:
                 file_urls = _load_file_proxies()
                 _merge_proxies(file_urls, worker_urls)
                 with _proxy_lock:
                     print(f"[proxy] Worker 代理刷新完成，共 {len(_proxies)} 个代理", file=sys.stderr)
         except Exception as e:
-            print(f"[proxy] 代理刷新异常: {e}", file=sys.stderr)
+            print(f"[proxy] 代理刷新异常: {type(e).__name__}", file=sys.stderr)
         _cleanup_stop.wait(PROXY_REFRESH_INTERVAL)
 
 
@@ -263,6 +271,16 @@ if not SERVICE_TOKEN:
     print(
         "[FATAL] 未设置 REBIND_SERVICE_TOKEN 环境变量。\n"
         "        为防止账号密码/TOTP 泄露，服务强制要求鉴权 token。",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# 代理池启用时 curl_cffi 必须可用（代理检测与实际换绑请求同栈，不提供 requests 降级）
+if _PROXY_POOL_ENABLED and not _HAS_CFFI:
+    print(
+        "[FATAL] 代理池已启用但 curl_cffi 不可用。\n"
+        "        代理连通性检测必须使用 curl_cffi（与实际换绑请求相同的 TLS/SOCKS5 栈），\n"
+        "        requests 检测成功不代表 curl_cffi 实际换绑成功。请确认 requirements.txt 已安装 curl-cffi。",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -314,44 +332,31 @@ def _normalize_socks_proxy(proxy_url: str) -> str:
 def _check_proxy_connectivity(proxy_url: str) -> bool:
     """通过代理请求测试 URL，验证代理可用。
 
-    优先使用 curl_cffi（与实际换绑请求相同的 TLS 栈和 SOCKS5 实现），
-    降级到 requests（仅 HTTP 代理可靠，SOCKS5 需要 PySocks）。
+    使用 curl_cffi（与实际换绑请求相同的 TLS 栈和 SOCKS5 实现）。
+    不提供 requests 降级：requests 检测成功不代表 curl_cffi 实际换绑成功。
     """
+    if not _HAS_CFFI:
+        return False
     normalized = _normalize_socks_proxy(proxy_url)
-    if _HAS_CFFI:
-        session = None
-        try:
-            # 代理连通性检测不需要 TLS 指纹模拟；使用基础 curl_cffi Session
-            # 仍走 libcurl 原生 SOCKS5 栈，与实际换绑请求的代理路径一致。
-            session = CffiSession()
-            session.trust_env = False
-            session.proxies = {"https": normalized, "http": normalized}
-            resp = session.get(PROXY_TEST_URL, timeout=PROXY_CHECK_TIMEOUT, allow_redirects=True)
-            if resp.status_code != 200:
-                return False
-            # cloudflare trace 应包含 ip= 字段
-            if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
-                return False
-            return True
-        except Exception:
+    session = None
+    try:
+        session = CffiSession()
+        session.trust_env = False
+        session.proxies = {"https": normalized, "http": normalized}
+        resp = session.get(PROXY_TEST_URL, timeout=PROXY_CHECK_TIMEOUT, allow_redirects=True)
+        if resp.status_code != 200:
             return False
-        finally:
-            if session is not None:
-                try:
-                    session.close()
-                except Exception:
-                    pass
-    else:
-        try:
-            _original_requests_get(
-                PROXY_TEST_URL,
-                proxies={"http": normalized, "https": normalized},
-                timeout=PROXY_CHECK_TIMEOUT,
-                allow_redirects=True,
-            )
-            return True
-        except Exception:
+        if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
             return False
+        return True
+    except Exception:
+        return False
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
 
 
 def _acquire_proxy() -> str | None:
@@ -434,26 +439,20 @@ def _update_proxy_status(proxy_url: str, ok: bool) -> None:
 def _test_single_proxy(proxy_url: str) -> dict:
     """测试单个代理连通性，返回脱敏结果。使用 curl_cffi（与换绑请求同栈）。"""
     import time as _time
+    if not _HAS_CFFI:
+        return {"address": _mask_proxy(proxy_url), "ok": False, "error": "curl_cffi 不可用"}
     normalized = _normalize_socks_proxy(proxy_url)
     t0 = _time.time()
     session = None
     try:
-        if _HAS_CFFI:
-            session = CffiSession()
-            session.trust_env = False
-            session.proxies = {"https": normalized, "http": normalized}
-            resp = session.get(PROXY_TEST_URL, timeout=10, allow_redirects=True)
-            if resp.status_code != 200:
-                raise RuntimeError(f"HTTP {resp.status_code}")
-            if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
-                raise RuntimeError("trace 无出口 IP")
-        else:
-            _original_requests_get(
-                PROXY_TEST_URL,
-                proxies={"http": normalized, "https": normalized},
-                timeout=10,
-                allow_redirects=True,
-            )
+        session = CffiSession()
+        session.trust_env = False
+        session.proxies = {"https": normalized, "http": normalized}
+        resp = session.get(PROXY_TEST_URL, timeout=10, allow_redirects=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+        if "cloudflare" in PROXY_TEST_URL and "ip=" not in resp.text:
+            raise RuntimeError("trace 无出口 IP")
         latency = int((_time.time() - t0) * 1000)
         _update_proxy_status(proxy_url, True)
         return {"address": _mask_proxy(proxy_url), "ok": True, "latency_ms": latency}
@@ -861,27 +860,41 @@ _cleanup_thread.start()
 
 # 启动代理健康检查线程（仅当代理池启用时）
 if _PROXY_POOL_ENABLED:
+    # 启动时同步从 Worker 拉取代理池（fail-fast：拉取失败则拒绝启动）
+    if _WORKER_API_BASE:
+        print("[proxy] 启动时从 Worker 拉取代理池...", file=sys.stderr)
+        _initial_worker_urls = _fetch_worker_proxies()
+        if _initial_worker_urls is None:
+            _file_fallback = _load_file_proxies()
+            if not _file_fallback:
+                print(
+                    "[FATAL] 启动时从 Worker 拉取代理池失败，且无文件代理备用。\n"
+                    "        服务拒绝启动以避免在无代理状态下接受换绑任务。",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            else:
+                print(f"[proxy] Worker 拉取失败，使用文件代理备用（{len(_file_fallback)} 个）", file=sys.stderr)
+                _merge_proxies(_file_fallback, [])
+        else:
+            _merge_proxies(_load_file_proxies(), _initial_worker_urls)
+            with _proxy_lock:
+                print(f"[proxy] 初始 Worker 代理拉取完成，共 {len(_proxies)} 个代理", file=sys.stderr)
+
     _proxy_recheck_thread = threading.Thread(target=_recheck_disabled_proxies, daemon=True)
     _proxy_recheck_thread.start()
     # 启动 Worker 代理池定时刷新线程
     if _WORKER_API_BASE:
         _proxy_refresh_thread = threading.Thread(target=_refresh_worker_proxies, daemon=True)
         _proxy_refresh_thread.start()
-        # 启动时立即拉取一次（不阻塞主流程）
-        def _initial_fetch():
-            worker_urls = _fetch_worker_proxies()
-            if worker_urls:
-                _merge_proxies(_load_file_proxies(), worker_urls)
-                with _proxy_lock:
-                    print(f"[proxy] 初始 Worker 代理拉取完成，共 {len(_proxies)} 个代理", file=sys.stderr)
-        threading.Thread(target=_initial_fetch, daemon=True).start()
 
 # ---------------------------------------------------------------------------
-# 关于 curl-cffi 与 SOCKS5 代理的说明：
-# requests + PySocks 支持 socks5:// 和 socks5h:// 代理（用于连通性检查 _check_proxy_connectivity）。
-# 但 curl-cffi（rebind_core 实际换绑请求使用）对 SOCKS5 的支持取决于其底层 libcurl 编译选项。
-# 如换绑请求在 SOCKS5 代理下失败，请改用 HTTP 代理出口，或在 rebind_core 中确认 curl-cffi 代理配置。
-# 连通性检查（requests）成功不代表 curl-cffi 实际请求也支持 SOCKS5。
+# curl-cffi 与 SOCKS5 代理：
+# curl-cffi（libcurl）原生支持 socks5:// 和 socks5h:// 代理，无需 PySocks。
+# 代理连通性检测使用 curl_cffi.Session（与实际换绑请求相同的 TLS/SOCKS5 栈），
+# 不提供 requests 降级：requests 检测成功不代表 curl_cffi 实际换绑成功。
+# socks5:// 会自动归一化为 socks5h://（DNS 解析经由代理端）。
+# mail_inbox 的 requests.get 直连 Worker 收信 API，不走代理（正确）。
 # ---------------------------------------------------------------------------
 
 
@@ -968,6 +981,8 @@ async def test_all_proxies() -> dict[str, Any]:
 async def refresh_proxies() -> dict[str, Any]:
     """立即从 Worker 重新拉取代理池（不等定时器）。"""
     worker_urls = _fetch_worker_proxies()
+    if worker_urls is None:
+        return {"success": False, "error": "从 Worker 拉取代理池失败，保留旧池"}
     file_urls = _load_file_proxies()
     _merge_proxies(file_urls, worker_urls)
     with _proxy_lock:

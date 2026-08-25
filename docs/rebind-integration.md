@@ -402,3 +402,63 @@ npx wrangler d1 execute mail_free_db --remote --command "SELECT revoked FROM reb
 - [ ] 第五节 5.2 的 7 项真实环境测试全部通过
 - [ ] Render 日志无敏感信息明文
 - [ ] 终态后 token 自动撤销（不依赖前端轮询）
+
+---
+
+## 八、上线加固说明（v2.1）
+
+### 8.1 /health 的局限性
+
+`/health` 返回 `status: ok` **只能证明当前实例进程健康**，不代表以下环节已验证：
+
+- 服务重启后代理池能否成功从 Worker 恢复（启动时 fail-fast，拉取失败会拒绝启动）
+- 代理批量刷新链路（Worker → Python 服务）是否正常
+- 真实换绑任务全链路（登录 → MFA → 换绑 → 收信 → 回调）是否正常
+- 代理在 curl_cffi（实际换绑请求栈）下是否真正可用
+
+上线前必须完成下方推荐顺序中的真实任务测试。
+
+### 8.2 代理检测使用 curl_cffi（无 requests 降级）
+
+代理连通性检测使用 `curl_cffi.requests.Session`，与实际换绑请求使用相同的 libcurl TLS/SOCKS5 栈。**不提供 requests 降级**——requests 检测成功不代表 curl_cffi 实际换绑成功。
+
+- 测试 URL：`https://cloudflare.com/cdn-cgi/trace`（验证出口 IP）
+- `socks5://` 自动归一化为 `socks5h://`（DNS 经由代理端）
+- curl_cffi 不可用且代理池启用时，服务启动失败（`sys.exit(1)`）
+- `requests` 依赖保留（`mail_inbox` 收信轮询使用，直连 Worker 不走代理）
+
+### 8.3 代理池状态管理
+
+| 层级 | 存储 | 内容 |
+|------|------|------|
+| D1（管理状态） | Cloudflare D1 `proxy_pool` 表 | 代理配置、enabled/disabled、last_check_status、fail_count |
+| Render 内存（运行时） | Python 进程内存 | in_use 标记、实时可用性、last_check 时间戳 |
+
+- 启动时**同步**从 Worker `/rebind/proxies` 拉取，失败且无文件代理备用时拒绝启动
+- 定时刷新（5 分钟）采用"新池校验成功后原子替换"：拉取失败保留旧池，不清空
+- Worker 只返回 `enabled=1` 的代理；D1 中禁用的代理不会进入内存池
+- Render 重启后内存池清空，必须重新从 Worker 拉取恢复
+- 连续失败 3 次（管理接口测试）或 5 次（任务失败）自动禁用
+
+### 8.4 任务代理固定
+
+每个换绑任务在获取信号量后调用一次 `_acquire_proxy()` 获取代理，**全程使用同一代理**，不中途切换。无论成功、失败还是取消，代理都在 `finally` 块中释放。
+
+### 8.5 推荐上线顺序
+
+1. **轮换代理凭据**（此前对话中暴露过的凭据必须更换）
+2. **部署 Worker**（`npx wrangler deploy`）
+3. **部署 Render**（git push 触发 Docker 重建，等待 Live）
+4. **检查 /health**：`curl https://<render-url>/health`，确认 `status: ok`、`proxy_pool_enabled: true`
+5. **测试管理员接口权限**：非管理员（未登录/guest）访问 `/api/admin/proxies/*` 返回 401/403
+6. **添加一条测试代理**：通过管理后台代理池页面添加，点击"测试全部代理"确认可用
+7. **测试真实换绑任务**：使用真实账号完成一次换绑，确认登录/MFA/换绑/收信/回调全链路
+8. **检查日志、D1 状态和代理释放**：Render 日志无敏感信息，D1 任务状态正确，代理 in_use 已释放
+9. **再批量导入正式代理**：单条验证通过后，通过"批量添加"导入正式代理池
+
+### 8.6 安全提醒
+
+- 代理凭据（用户名/密码）绝不返回前端，列表只显示 `host:port`
+- 批量添加错误信息只显示行号和原因，不回显完整代理行
+- Python 服务接口用 `REBIND_SERVICE_TOKEN` Bearer 鉴权
+- 所有管理接口严格校验管理员身份（root），非管理员返回 403

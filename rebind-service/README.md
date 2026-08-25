@@ -190,9 +190,30 @@ docker run -d \
 }
 ```
 
-### ⚠️ curl-cffi 与 SOCKS5 注意事项
+### 代理检测使用 curl_cffi
 
-代理连通性检查使用 `requests` + `PySocks`，支持 `socks5://` 和 `socks5h://`。但实际换绑请求由 `curl-cffi`（C 扩展）发起，其对 SOCKS5 的支持取决于底层 libcurl 编译选项。如换绑请求在 SOCKS5 代理下失败，请改用 HTTP 代理出口。
+代理连通性检测使用 `curl_cffi.requests.Session`（与实际换绑请求相同的 libcurl TLS/SOCKS5 栈），测试 URL 为 `https://cloudflare.com/cdn-cgi/trace`。**不提供 requests 降级**——requests 检测成功不代表 curl_cffi 实际换绑成功。
+
+- `socks5://` 自动归一化为 `socks5h://`（DNS 经由代理端）
+- curl_cffi（libcurl）原生支持 SOCKS5，无需 PySocks
+- curl_cffi 不可用且代理池启用时，服务启动失败（`sys.exit(1)`）
+- `requests` 依赖保留：`mail_inbox` 收信轮询直连 Worker API，不走代理
+
+### /health 的局限性
+
+`/health` 返回 `status: ok` 只能证明当前实例进程健康，不代表重启恢复、批量刷新和真实换绑任务链路已验证。上线前请完成真实任务测试。
+
+## 推荐上线顺序
+
+1. **轮换代理凭据**（暴露过的凭据必须更换）
+2. **部署 Worker**（`npx wrangler deploy`）
+3. **部署 Render**（git push 触发 Docker 重建，等待 Live）
+4. **检查 /health**：确认 `status: ok`、`proxy_pool_enabled: true`
+5. **测试管理员接口权限**：非管理员访问 `/api/admin/proxies/*` 返回 401/403
+6. **添加一条测试代理**：管理后台 → 代理池 → 添加 → 测试全部代理
+7. **测试真实换绑任务**：确认登录/MFA/换绑/收信/回调全链路
+8. **检查日志、D1 状态和代理释放**：无敏感信息、任务状态正确、代理已释放
+9. **再批量导入正式代理**
 
 ## 安全提示
 
@@ -200,3 +221,5 @@ docker run -d \
 - `REBIND_SERVICE_TOKEN` 使用足够长的随机字符串（推荐 `openssl rand -hex 32`）
 - 输出文件包含 session / access_token，妥善保管或定期清理
 - 服务默认监听 `127.0.0.1`，如需远程访问请通过反向代理
+- 代理凭据（用户名/密码）绝不返回前端，管理接口只显示 `host:port`
+- 代理池刷新失败时保留旧池不清空；启动时拉取失败且无备用代理则拒绝启动
