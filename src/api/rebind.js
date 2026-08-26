@@ -6,13 +6,18 @@
  * 2. 外部邮箱（如 iCloud）：从 external_inbox_accounts 表获取第三方接码 URL，Python 服务直接轮询
  */
 
-import { jsonResponse, errorResponse, isStrictAdmin, getUserFromSession, getUserId } from './helpers.js';
+import { jsonResponse, errorResponse, isStrictAdmin, getJwtPayload } from './helpers.js';
 import { getExternalInbox } from './external-inboxes.js';
 import { getMailpostMailbox } from './mailpost.js';
 
-const REBIND_SERVICE_URL = (globalThis.REBIND_SERVICE_URL || '').replace(/\/$/, '');
-const REBIND_SERVICE_TOKEN = globalThis.REBIND_SERVICE_TOKEN || '';
-const WORKER_ORIGIN = globalThis.WORKER_ORIGIN || '';
+/** 从 options 读取换绑服务配置 */
+function getRebindConfig(options) {
+  return {
+    serviceUrl: String(options.rebindServiceUrl || '').replace(/\/$/, ''),
+    serviceToken: options.rebindServiceToken || '',
+    workerOrigin: options.workerOrigin || '',
+  };
+}
 
 /** 生成随机 token */
 function generateToken(bytes = 24) {
@@ -44,6 +49,7 @@ async function findFreemailMailbox(db, email) {
  * 返回 { type: 'freemail'|'mailpost'|'external'|'none', mail_api?, inbox_token?, inbox_url?, mailbox? }
  */
 async function resolveInboxConfig(db, email, label, options, taskId) {
+  const { workerOrigin } = getRebindConfig(options);
   const freemail = await findFreemailMailbox(db, email);
   if (freemail) {
     const token = generateToken(24);
@@ -57,7 +63,7 @@ async function resolveInboxConfig(db, email, label, options, taskId) {
     }
     return {
       type: 'freemail',
-      mail_api: `${WORKER_ORIGIN}/rebind/${label}-inbox`,
+      mail_api: `${workerOrigin}/rebind/${label}-inbox`,
       inbox_token: token,
       mailbox: freemail,
     };
@@ -86,7 +92,7 @@ async function resolveInboxConfig(db, email, label, options, taskId) {
     }
     return {
       type: 'mailpost',
-      mail_api: `${WORKER_ORIGIN}/rebind/mailpost-inbox`,
+      mail_api: `${workerOrigin}/rebind/mailpost-inbox`,
       inbox_token: token,
     };
   }
@@ -98,6 +104,8 @@ async function resolveInboxConfig(db, email, label, options, taskId) {
  * 处理换绑 API 请求
  */
 export async function handleRebindApi(request, db, url, path, options) {
+  const { serviceUrl: REBIND_SERVICE_URL, serviceToken: REBIND_SERVICE_TOKEN, workerOrigin: WORKER_ORIGIN } = getRebindConfig(options);
+
   // GET /api/rebind/config — 换绑功能配置
   if (path === '/api/rebind/config' && request.method === 'GET') {
     const enabled = !!(REBIND_SERVICE_URL && REBIND_SERVICE_TOKEN);
@@ -147,8 +155,9 @@ export async function handleRebindApi(request, db, url, path, options) {
 
   // POST /api/rebind/start — 创建换绑任务
   if (path === '/api/rebind/start' && request.method === 'POST') {
-    const user = await getUserFromSession(request, db, options);
-    if (!user) return errorResponse('请先登录', 401);
+    const payload = getJwtPayload(request, options);
+    if (!payload) return errorResponse('请先登录', 401);
+    const userId = Number(payload.userId || 0);
 
     let body;
     try { body = await request.json(); } catch (_) { return errorResponse('请求体必须为 JSON', 400); }
@@ -186,7 +195,7 @@ export async function handleRebindApi(request, db, url, path, options) {
       await db.prepare(
         `INSERT INTO rebind_tasks (task_id, user_id, old_email, new_email, status, idempotency_key, created_at)
          VALUES (?, ?, ?, ?, 'created', ?, datetime('now'))`
-      ).bind(taskId, user.id, oldEmail, newEmail, generateToken(8)).run();
+      ).bind(taskId, userId, oldEmail, newEmail, generateToken(8)).run();
     } catch (e) {
       return errorResponse('创建任务记录失败：' + e.message, 500);
     }
@@ -246,8 +255,9 @@ export async function handleRebindApi(request, db, url, path, options) {
     const taskId = path.split('/')[4];
     if (!taskId) return errorResponse('缺少任务 ID', 400);
 
-    const user = await getUserFromSession(request, db, options);
-    if (!user) return errorResponse('请先登录', 401);
+    const payload = getJwtPayload(request, options);
+    if (!payload) return errorResponse('请先登录', 401);
+    const userId = Number(payload.userId || 0);
 
     // 先查 D1
     let dbTask = null;
@@ -258,7 +268,7 @@ export async function handleRebindApi(request, db, url, path, options) {
     if (!dbTask) return errorResponse('任务不存在', 404);
 
     // 非管理员只能查看自己的任务
-    if (!isStrictAdmin(request, options) && dbTask.user_id !== user.id) {
+    if (!isStrictAdmin(request, options) && dbTask.user_id !== userId) {
       return errorResponse('无权查看此任务', 403);
     }
 
@@ -290,8 +300,9 @@ export async function handleRebindApi(request, db, url, path, options) {
     const taskId = path.split('/')[4];
     if (!taskId) return errorResponse('缺少任务 ID', 400);
 
-    const user = await getUserFromSession(request, db, options);
-    if (!user) return errorResponse('请先登录', 401);
+    const payload = getJwtPayload(request, options);
+    if (!payload) return errorResponse('请先登录', 401);
+    const userId = Number(payload.userId || 0);
 
     let dbTask = null;
     try {
@@ -299,7 +310,7 @@ export async function handleRebindApi(request, db, url, path, options) {
     } catch (_) {}
 
     if (!dbTask) return errorResponse('任务不存在', 404);
-    if (!isStrictAdmin(request, options) && dbTask.user_id !== user.id) {
+    if (!isStrictAdmin(request, options) && dbTask.user_id !== userId) {
       return errorResponse('无权操作此任务', 403);
     }
 
