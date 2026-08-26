@@ -1,121 +1,67 @@
 /**
- * API 模块统一入口
- * @module api
+ * API 路由注册
  */
 
-import { handleUsersApi } from './users.js';
+import { handleSessionApi } from './session.js';
 import { handleMailboxesApi } from './mailboxes.js';
-import { handleEmailsApi } from './emails.js';
-import { handleSendApi } from './send.js';
+import { handleMailApi } from './mail.js';
+import { handleAdminApi } from './admin.js';
 import { handleRebindApi } from './rebind.js';
 import { handleDomainsApi } from './domains.js';
 import { handleProxiesApi } from './proxies.js';
-import { getJwtPayload, errorResponse } from './helpers.js';
+import { handleExternalInboxesApi } from './external-inboxes.js';
+import { handleAbaiApi } from './abai.js';
+
+export { getExternalInbox } from './external-inboxes.js';
 
 /**
- * 处理所有 API 请求
- * @param {Request} request - HTTP 请求
- * @param {object} db - 数据库连接
- * @param {Array<string>} mailDomains - 邮件域名列表
- * @param {object} options - 选项
- * @returns {Promise<Response>} HTTP 响应
+ * 处理所有 /api/* 请求
  */
-export async function handleApiRequest(request, db, mailDomains, options = {
-  mockOnly: false,
-  resendApiKey: '',
-  adminName: '',
-  r2: null,
-  authPayload: null,
-  mailboxOnly: false
-}) {
+export async function handleApiRequest(request, db, env, options) {
   const url = new URL(request.url);
   const path = url.pathname;
-  const isMock = !!options.mockOnly;
-  const isMailboxOnly = !!options.mailboxOnly;
 
-  // 邮箱用户只能访问特定的API端点和自己的数据
-  if (isMailboxOnly) {
-    const payload = getJwtPayload(request, options);
-    const mailboxAddress = payload?.mailboxAddress;
-    const mailboxId = payload?.mailboxId;
-    
-    // 允许的API端点
-    const allowedPaths = ['/api/emails', '/api/email/', '/api/auth', '/api/quota', '/api/mailbox/info', '/api/mailbox/password'];
-    const isAllowedPath = allowedPaths.some(allowedPath => path.startsWith(allowedPath));
-    
-    if (!isAllowedPath) {
-      return errorResponse('访问被拒绝', 403);
-    }
-    
-    // 对于邮件相关API，限制只能访问自己的邮箱
-    if (path === '/api/emails' && request.method === 'GET') {
-      const requestedMailbox = url.searchParams.get('mailbox');
-      if (requestedMailbox && requestedMailbox.toLowerCase() !== mailboxAddress?.toLowerCase()) {
-        return errorResponse('只能访问自己的邮箱', 403);
-      }
-      // 如果没有指定邮箱，自动设置为用户自己的邮箱
-      if (!requestedMailbox && mailboxAddress) {
-        url.searchParams.set('mailbox', mailboxAddress);
-      }
-    }
-    
-    // 对于单个邮件操作，验证邮件是否属于该用户的邮箱
-    if (path.startsWith('/api/email/') && mailboxId) {
-      const emailId = path.split('/')[3];
-      if (emailId && emailId !== 'batch') {
-        try {
-          const { results } = await db.prepare('SELECT mailbox_id FROM messages WHERE id = ? LIMIT 1').bind(emailId).all();
-          if (!results || results.length === 0) {
-            return errorResponse('邮件不存在', 404);
-          }
-          if (results[0].mailbox_id !== mailboxId) {
-            return errorResponse('无权访问此邮件', 403);
-          }
-        } catch (e) {
-          return errorResponse('验证失败', 500);
-        }
-      }
-    }
+  // 会话相关
+  if (path.startsWith('/api/session')) {
+    return handleSessionApi(request, db, url, path, options);
   }
 
-  // 依次尝试各个 API 处理器
-  let response;
+  // 邮箱管理
+  if (path.startsWith('/api/mailboxes')) {
+    return handleMailboxesApi(request, db, url, path, options);
+  }
 
-  // 域名管理 API（仅管理员）
-  response = await handleDomainsApi(request, db, url, path, options);
-  if (response) return response;
+  // 邮件收发
+  if (path.startsWith('/api/mail')) {
+    return handleMailApi(request, db, url, path, options);
+  }
 
-  // 代理池管理 API（管理员 CRUD + Python 服务拉取）
-  response = await handleProxiesApi(request, db, url, path, options);
-  if (response) return response;
+  // 管理员接口
+  if (path.startsWith('/api/admin')) {
+    if (path.startsWith('/api/admin/domains')) {
+      return handleDomainsApi(request, db, url, path, options);
+    }
+    if (path.startsWith('/api/admin/proxies')) {
+      return handleProxiesApi(request, db, url, path, options);
+    }
+    if (path.startsWith('/api/admin/external-inboxes')) {
+      return handleExternalInboxesApi(request, db, url, path, options);
+    }
+    return handleAdminApi(request, db, url, path, options);
+  }
 
-  // 用户管理 API
-  response = await handleUsersApi(request, db, url, path, options);
-  if (response) return response;
+  // 换绑相关
+  if (path.startsWith('/api/rebind')) {
+    return handleRebindApi(request, db, url, path, options);
+  }
 
-  // 邮箱管理 API
-  response = await handleMailboxesApi(request, db, mailDomains, url, path, options);
-  if (response) return response;
+  // aBaiFreeGPT 代理
+  if (path.startsWith('/api/abai')) {
+    return handleAbaiApi(request, url, path, options);
+  }
 
-  // 邮件 API
-  response = await handleEmailsApi(request, db, url, path, options);
-  if (response) return response;
-
-  // 发送 API
-  response = await handleSendApi(request, db, url, path, options);
-  if (response) return response;
-
-  // ChatGPT 换绑邮箱 API（调用独立 Python 服务）
-  response = await handleRebindApi(request, db, url, path, options);
-  if (response) return response;
-
-  return errorResponse('未找到 API 路径', 404);
+  return new Response(JSON.stringify({ error: 'API not found' }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
-
-export { handleUsersApi } from './users.js';
-export { handleMailboxesApi } from './mailboxes.js';
-export { handleEmailsApi } from './emails.js';
-export { handleSendApi } from './send.js';
-export { handleRebindApi } from './rebind.js';
-export { handleDomainsApi, getEnabledDomains } from './domains.js';
-export { handleProxiesApi, normalizeProxy } from './proxies.js';
