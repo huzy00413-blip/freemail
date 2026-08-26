@@ -46,6 +46,8 @@ router.all('/api/*', async (c) => {
     rebindServiceUrl: c.env.REBIND_SERVICE_URL || '',
     rebindServiceToken: c.env.REBIND_SERVICE_TOKEN || '',
     proxyEncryptionKey: c.env.PROXY_ENCRYPTION_KEY || '',
+    mailpostApiUrl: c.env.MAILPOST_API_URL || '',
+    mailpostAdminToken: c.env.MAILPOST_ADMIN_TOKEN || '',
     authPayload
   };
 

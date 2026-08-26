@@ -10,7 +10,7 @@ import { handleRebindApi } from './rebind.js';
 import { handleDomainsApi } from './domains.js';
 import { handleProxiesApi } from './proxies.js';
 import { handleExternalInboxesApi } from './external-inboxes.js';
-import { handleAbaiApi } from './abai.js';
+import { handleMailpostApi } from './mailpost.js';
 
 export { getExternalInbox } from './external-inboxes.js';
 
@@ -55,9 +55,9 @@ export async function handleApiRequest(request, db, env, options) {
     return handleRebindApi(request, db, url, path, options);
   }
 
-  // aBaiFreeGPT 代理
-  if (path.startsWith('/api/abai')) {
-    return handleAbaiApi(request, url, path, options);
+  // 邮局系统管理
+  if (path.startsWith('/api/mailpost')) {
+    return handleMailpostApi(request, db, url, path, options);
   }
 
   return new Response(JSON.stringify({ error: 'API not found' }), {

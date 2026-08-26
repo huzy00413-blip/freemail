@@ -115,6 +115,9 @@ export function applySessionUI() {
 
   const extInboxesLink = document.getElementById('external-inboxes-link');
   if (extInboxesLink) extInboxesLink.style.display = isStrictAdmin() ? '' : 'none';
+
+  const mailpostLink = document.getElementById('mailpost-link');
+  if (mailpostLink) mailpostLink.style.display = isStrictAdmin() ? '' : 'none';
 }
 
 /**

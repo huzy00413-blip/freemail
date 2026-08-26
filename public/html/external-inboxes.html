@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" class="precheck-hide">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>外部接码地址管理 - iDing's临时邮箱</title>
+  <title>澶栭儴鎺ョ爜鍦板潃绠＄悊 - iDing's涓存椂閭</title>
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
           location.replace('/');
         })
         .catch(() => {
-          if (window.AuthGuard) { window.AuthGuard.goLoading('/html/external-inboxes.html', '正在校验权限…'); }
+          if (window.AuthGuard) { window.AuthGuard.goLoading('/html/external-inboxes.html', '姝ｅ湪鏍￠獙鏉冮檺鈥?); }
           else { location.replace('/templates/loading.html?redirect=%2Fhtml%2Fexternal-inboxes.html'); }
         });
     })();
@@ -64,13 +64,13 @@
           <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
         </svg>
       </span>
-      <span>外部接码地址管理</span>
+      <span>澶栭儴鎺ョ爜鍦板潃绠＄悊</span>
     </div>
     <div class="nav-actions">
       <a href="/html/admin.html" class="btn btn-ghost" style="text-decoration:none">
-        <span>返回管理</span>
+        <span>杩斿洖绠＄悊</span>
       </a>
-      <button id="logout" class="btn btn-secondary">退出登录</button>
+      <button id="logout" class="btn btn-secondary">閫€鍑虹櫥褰?/button>
     </div>
   </div>
 
@@ -81,27 +81,27 @@
           <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
           <polyline points="22,6 12,13 2,6"/>
         </svg>
-        外部接码地址绑定
+        澶栭儴鎺ョ爜鍦板潃缁戝畾
       </div>
       <div class="ext-inbox-actions">
         <button id="btn-add" class="btn btn-primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          添加接码地址
+          娣诲姞鎺ョ爜鍦板潃
         </button>
         <button id="btn-batch" class="btn btn-secondary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          批量导入
+          鎵归噺瀵煎叆
         </button>
         <button id="btn-refresh" class="btn btn-ghost">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          刷新
+          鍒锋柊
         </button>
       </div>
     </div>
 
     <div class="card">
       <div id="loading" class="loading-indicator" style="padding:20px">
-        <div class="spinner"></div><span>加载中…</span>
+        <div class="spinner"></div><span>鍔犺浇涓€?/span>
       </div>
       <div id="table-area" style="display:none">
         <div class="ext-inbox-table-wrapper">
@@ -109,11 +109,11 @@
             <thead>
               <tr>
                 <th>ID</th>
-                <th>邮箱</th>
-                <th>接码地址（脱敏）</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>操作</th>
+                <th>閭</th>
+                <th>鎺ョ爜鍦板潃锛堣劚鏁忥級</th>
+                <th>鐘舵€?/th>
+                <th>鍒涘缓鏃堕棿</th>
+                <th>鎿嶄綔</th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -124,52 +124,52 @@
             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
             <polyline points="22,6 12,13 2,6"/>
           </svg>
-          <p>暂无外部接码地址，点击"添加接码地址"开始</p>
+          <p>鏆傛棤澶栭儴鎺ョ爜鍦板潃锛岀偣鍑?娣诲姞鎺ョ爜鍦板潃"寮€濮?/p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- 添加模态框 -->
+  <!-- 娣诲姞妯℃€佹 -->
   <div class="modal" id="add-modal">
     <div class="modal-card">
       <div class="modal-header">
-        <div class="modal-title">添加外部接码地址</div>
-        <button id="add-close" class="close-btn" aria-label="关闭">
+        <div class="modal-title">娣诲姞澶栭儴鎺ョ爜鍦板潃</div>
+        <button id="add-close" class="close-btn" aria-label="鍏抽棴">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">邮箱地址</label>
+          <label class="form-label">閭鍦板潃</label>
           <input id="add-email" class="input" type="email" placeholder="user@icloud.com" />
         </div>
         <div class="form-group">
-          <label class="form-label">接码 URL</label>
+          <label class="form-label">鎺ョ爜 URL</label>
           <input id="add-url" class="input" type="url" placeholder="https://stayai.me/?email=user@icloud.com" />
-          <div class="batch-hint">仅允许 http/https，禁止内网地址。URL 中的敏感参数（auth_code/token 等）将被脱敏存储和显示。</div>
+          <div class="batch-hint">浠呭厑璁?http/https锛岀姝㈠唴缃戝湴鍧€銆俇RL 涓殑鏁忔劅鍙傛暟锛坅uth_code/token 绛夛級灏嗚鑴辨晱瀛樺偍鍜屾樉绀恒€?/div>
         </div>
         <div class="form-group">
           <label class="toggle-label">
             <input id="add-enabled" type="checkbox" class="toggle-input" checked />
             <span class="toggle-switch"></span>
-            <span class="toggle-text">启用</span>
+            <span class="toggle-text">鍚敤</span>
           </label>
         </div>
       </div>
       <div class="modal-footer">
-        <button id="add-cancel" class="btn btn-secondary">取消</button>
-        <button id="add-save" class="btn btn-primary">保存</button>
+        <button id="add-cancel" class="btn btn-secondary">鍙栨秷</button>
+        <button id="add-save" class="btn btn-primary">淇濆瓨</button>
       </div>
     </div>
   </div>
 
-  <!-- 批量导入模态框 -->
+  <!-- 鎵归噺瀵煎叆妯℃€佹 -->
   <div class="modal" id="batch-modal">
     <div class="modal-card" style="max-width:640px">
       <div class="modal-header">
-        <div class="modal-title">批量导入外部接码地址</div>
-        <button id="batch-close" class="close-btn" aria-label="关闭">
+        <div class="modal-title">鎵归噺瀵煎叆澶栭儴鎺ョ爜鍦板潃</div>
+        <button id="batch-close" class="close-btn" aria-label="鍏抽棴">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -177,14 +177,14 @@
         <textarea id="batch-text" class="batch-textarea" placeholder="user1@icloud.com----https://stayai.me/?email=user1@icloud.com
 user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_code=xxx"></textarea>
         <div class="batch-hint">
-          每行一条，使用 <code>----</code>（四个短横线）分隔邮箱和 URL。<br/>
-          最多 500 条，重复邮箱自动跳过。错误信息不回显完整 URL。
+          姣忚涓€鏉★紝浣跨敤 <code>----</code>锛堝洓涓煭妯嚎锛夊垎闅旈偖绠卞拰 URL銆?br/>
+          鏈€澶?500 鏉★紝閲嶅閭鑷姩璺宠繃銆傞敊璇俊鎭笉鍥炴樉瀹屾暣 URL銆?
         </div>
         <div id="batch-result"></div>
       </div>
       <div class="modal-footer">
-        <button id="batch-cancel" class="btn btn-secondary">取消</button>
-        <button id="batch-import" class="btn btn-primary">导入</button>
+        <button id="batch-cancel" class="btn btn-secondary">鍙栨秷</button>
+        <button id="batch-import" class="btn btn-primary">瀵煎叆</button>
       </div>
     </div>
   </div>
@@ -216,12 +216,12 @@ user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_co
               <td>${item.id}</td>
               <td><strong>${escapeHtml(item.email)}</strong></td>
               <td><span class="ext-inbox-url">${escapeHtml(item.inbox_url_masked || item.inbox_url)}</span></td>
-              <td>${item.enabled ? '<span class="badge-enabled">启用</span>' : '<span class="badge-disabled">禁用</span>'}</td>
+              <td>${item.enabled ? '<span class="badge-enabled">鍚敤</span>' : '<span class="badge-disabled">绂佺敤</span>'}</td>
               <td>${escapeHtml(item.created_at || '')}</td>
               <td>
                 <div class="row-actions">
-                  <button class="btn btn-ghost btn-icon-sm" data-action="toggle" data-id="${item.id}" data-enabled="${item.enabled}">${item.enabled ? '禁用' : '启用'}</button>
-                  <button class="btn btn-danger-outline btn-icon-sm" data-action="delete" data-id="${item.id}">删除</button>
+                  <button class="btn btn-ghost btn-icon-sm" data-action="toggle" data-id="${item.id}" data-enabled="${item.enabled}">${item.enabled ? '绂佺敤' : '鍚敤'}</button>
+                  <button class="btn btn-danger-outline btn-icon-sm" data-action="delete" data-id="${item.id}">鍒犻櫎</button>
                 </div>
               </td>
             `;
@@ -230,7 +230,7 @@ user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_co
         }
         tableArea.style.display = '';
       } catch (e) {
-        if (window.showToast) window.showToast('加载失败：' + e.message, 'error');
+        if (window.showToast) window.showToast('鍔犺浇澶辫触锛? + e.message, 'error');
       } finally {
         loading.style.display = 'none';
       }
@@ -252,18 +252,18 @@ user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_co
         try {
           await apiFetch(`/api/admin/external-inboxes/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !enabled }) });
           loadList();
-        } catch (err) { if (window.showToast) window.showToast('操作失败：' + err.message, 'error'); }
+        } catch (err) { if (window.showToast) window.showToast('鎿嶄綔澶辫触锛? + err.message, 'error'); }
       } else if (action === 'delete') {
-        if (!confirm('确认删除该接码地址？')) return;
+        if (!confirm('纭鍒犻櫎璇ユ帴鐮佸湴鍧€锛?)) return;
         try {
           await apiFetch(`/api/admin/external-inboxes/${id}`, { method: 'DELETE' });
-          if (window.showToast) window.showToast('已删除', 'success');
+          if (window.showToast) window.showToast('宸插垹闄?, 'success');
           loadList();
-        } catch (err) { if (window.showToast) window.showToast('删除失败：' + err.message, 'error'); }
+        } catch (err) { if (window.showToast) window.showToast('鍒犻櫎澶辫触锛? + err.message, 'error'); }
       }
     });
 
-    // 添加
+    // 娣诲姞
     const addModal = document.getElementById('add-modal');
     document.getElementById('btn-add').onclick = () => { addModal.style.display = 'flex'; };
     document.getElementById('add-close').onclick = () => { addModal.style.display = 'none'; };
@@ -272,40 +272,40 @@ user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_co
       const email = document.getElementById('add-email').value.trim();
       const url = document.getElementById('add-url').value.trim();
       const enabled = document.getElementById('add-enabled').checked;
-      if (!email || !url) { if (window.showToast) window.showToast('邮箱和 URL 不能为空', 'error'); return; }
+      if (!email || !url) { if (window.showToast) window.showToast('閭鍜?URL 涓嶈兘涓虹┖', 'error'); return; }
       try {
         await apiFetch('/api/admin/external-inboxes', { method: 'POST', body: JSON.stringify({ email, inbox_url: url, enabled }) });
-        if (window.showToast) window.showToast('添加成功', 'success');
+        if (window.showToast) window.showToast('娣诲姞鎴愬姛', 'success');
         addModal.style.display = 'none';
         document.getElementById('add-email').value = '';
         document.getElementById('add-url').value = '';
         loadList();
-      } catch (err) { if (window.showToast) window.showToast('添加失败：' + err.message, 'error'); }
+      } catch (err) { if (window.showToast) window.showToast('娣诲姞澶辫触锛? + err.message, 'error'); }
     };
 
-    // 批量
+    // 鎵归噺
     const batchModal = document.getElementById('batch-modal');
     document.getElementById('btn-batch').onclick = () => { batchModal.style.display = 'flex'; document.getElementById('batch-result').innerHTML = ''; };
     document.getElementById('batch-close').onclick = () => { batchModal.style.display = 'none'; };
     document.getElementById('batch-cancel').onclick = () => { batchModal.style.display = 'none'; };
     document.getElementById('batch-import').onclick = async () => {
       const text = document.getElementById('batch-text').value.trim();
-      if (!text) { if (window.showToast) window.showToast('内容不能为空', 'error'); return; }
+      if (!text) { if (window.showToast) window.showToast('鍐呭涓嶈兘涓虹┖', 'error'); return; }
       const resultDiv = document.getElementById('batch-result');
-      resultDiv.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><span>导入中…</span></div>';
+      resultDiv.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><span>瀵煎叆涓€?/span></div>';
       try {
         const data = await apiFetch('/api/admin/external-inboxes/batch', { method: 'POST', body: JSON.stringify({ proxies: text }) });
-        let html = `<div class="result-summary result-success">共 ${data.total} 条，成功 ${data.added} 条，失败 ${data.failed} 条</div>`;
+        let html = `<div class="result-summary result-success">鍏?${data.total} 鏉★紝鎴愬姛 ${data.added} 鏉★紝澶辫触 ${data.failed} 鏉?/div>`;
         if (data.errors && data.errors.length) {
-          html += '<div class="result-errors-list"><strong>失败详情：</strong><ul>';
-          for (const e of data.errors) html += `<li>第 ${e.line} 行：${escapeHtml(e.error)}</li>`;
+          html += '<div class="result-errors-list"><strong>澶辫触璇︽儏锛?/strong><ul>';
+          for (const e of data.errors) html += `<li>绗?${e.line} 琛岋細${escapeHtml(e.error)}</li>`;
           html += '</ul></div>';
         }
         resultDiv.innerHTML = html;
         document.getElementById('batch-text').value = '';
         loadList();
       } catch (err) {
-        resultDiv.innerHTML = `<div class="result-summary result-error">导入失败：${escapeHtml(err.message)}</div>`;
+        resultDiv.innerHTML = `<div class="result-summary result-error">瀵煎叆澶辫触锛?{escapeHtml(err.message)}</div>`;
       }
     };
 

@@ -30,6 +30,7 @@
 import { Hono } from 'hono';
 import { getInitializedDatabase } from '../db/index.js';
 import { decryptProxyUrl } from '../utils/proxy-crypto.js';
+import { fetchMailpostInbox } from '../api/mailpost.js';
 
 const router = new Hono();
 
@@ -183,6 +184,88 @@ async function handleInbox(c, expectedMailboxType) {
 router.get('/rebind/old-inbox', (c) => handleInbox(c, 'old'));
 router.get('/rebind/new-inbox', (c) => handleInbox(c, 'new'));
 router.get('/rebind/inbox', (c) => handleInbox(c, 'new'));
+
+/**
+ * 邮局系统邮箱收信端点。
+ * 验证短期 token 后，通过邮局 API 拉取邮件并提取验证码。
+ */
+router.get('/rebind/mailpost-inbox', async (c) => {
+  const token = String(
+    c.req.header('X-Rebind-Token') || c.req.header('x-rebind-token') || ''
+  ).trim();
+  if (!token) return c.json({ error: '缺少 X-Rebind-Token header' }, 400);
+
+  const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
+  if (!checkRateLimit(clientIp)) return c.json({ error: '请求过于频繁' }, 429);
+
+  let db;
+  try { db = await getInitializedDatabase(c.env); } catch (_) {
+    return c.json({ error: '数据库连接失败' }, 500);
+  }
+  await cleanupExpiredTokens(db);
+
+  try {
+    const now = new Date().toISOString();
+    const updateResult = await db.prepare(`
+      UPDATE rebind_inbox_tokens
+      SET used_count = used_count + 1
+      WHERE token = ? AND revoked = 0 AND expires_at > ?
+        AND mailbox_type IN ('mailpost-old', 'mailpost-new')
+        AND used_count < max_uses
+    `).bind(token, now).run();
+
+    const changed = updateResult.meta?.changes ?? 0;
+    if (changed !== 1) {
+      return c.json({ error: 'token 无效、已过期、已撤销或使用次数已达上限' }, 403);
+    }
+
+    const tokenRow = await db.prepare(`
+      SELECT id, mailbox_type, metadata
+      FROM rebind_inbox_tokens WHERE token = ? LIMIT 1
+    `).bind(token).first();
+
+    if (!tokenRow || !String(tokenRow.mailbox_type || '').startsWith('mailpost')) {
+      return c.json({ error: 'token 不存在' }, 403);
+    }
+
+    let meta;
+    try { meta = JSON.parse(tokenRow.metadata || '{}'); } catch (_) { meta = {}; }
+    const mpAddress = String(meta.address || '');
+    const mpKey = String(meta.key || '');
+    if (!mpAddress || !mpKey) {
+      return c.json({ error: '邮局邮箱配置缺失' }, 500);
+    }
+
+    const mpOptions = {
+      mailpostApiUrl: c.env.MAILPOST_API_URL || '',
+      mailpostAdminToken: c.env.MAILPOST_ADMIN_TOKEN || '',
+    };
+    const result = await fetchMailpostInbox(mpOptions, mpAddress, mpKey);
+    if (!result.ok) {
+      return c.json({ code: '', subject: '', received_at: '', content: '', error: result.error });
+    }
+
+    const emails = result.emails || [];
+    if (!emails.length) {
+      return c.json({ code: '', subject: '', received_at: '', content: '' });
+    }
+    emails.sort((a, b) => (Number(b.Timestamp) || 0) - (Number(a.Timestamp) || 0));
+    const latest = emails[0];
+    const bodyText = String(latest.Body || '');
+    const subjectText = String(latest.Subject || '');
+    const code = extractOtp(bodyText) || extractOtp(subjectText);
+
+    return c.json({
+      code: code || '',
+      subject: subjectText,
+      received_at: latest.Sent || latest.Timestamp || '',
+      content: bodyText.substring(0, 2000),
+    });
+  } catch (e) {
+    console.error('[rebind] mailpost-inbox 查询失败:', e);
+    return c.json({ error: '查询失败' }, 500);
+  }
+});
 
 /**
  * Python 服务终态回调：任务结束后主动通知 Worker 撤销收信 token。

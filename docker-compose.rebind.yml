@@ -1,0 +1,37 @@
+services:
+  rebind:
+    build:
+      context: ./rebind-service
+      dockerfile: Dockerfile
+    container_name: freemail-rebind
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - REBIND_SERVICE_TOKEN=${REBIND_SERVICE_TOKEN}
+      - REBIND_CALLBACK_TOKEN=${REBIND_CALLBACK_TOKEN}
+      - WORKER_TASK_CALLBACK_URL=${WORKER_TASK_CALLBACK_URL}
+      - REBIND_WORKER_API_BASE=${REBIND_WORKER_API_BASE}
+      - REBIND_MAX_CONCURRENT=${REBIND_MAX_CONCURRENT:-3}
+      - MAX_WAITING=${MAX_WAITING:-10}
+      - REBIND_BUNDLE_TTL=${REBIND_BUNDLE_TTL:-3600}
+      - PROXY_DEFAULT_SCHEME=${PROXY_DEFAULT_SCHEME:-socks5h}
+      - PROXY_POOL=@/app/proxies.txt
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./rebind-service/proxies.txt:/app/proxies.txt:ro
+      - rebind-outputs:/app/outputs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  rebind-outputs:

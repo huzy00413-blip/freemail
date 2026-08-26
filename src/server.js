@@ -10,7 +10,6 @@ import apiRoutes from './routes/api.js';
 import staticRoutes from './routes/static.js';
 import shareRoutes from './routes/share.js';
 import rebindPublicRoutes from './routes/rebind.js';
-import abaiProxyRoutes from './routes/abai.js';
 import { handleEmailEvent } from './email/handler.js';
 
 const app = new Hono();
@@ -41,9 +40,6 @@ app.use('/api/*', authMiddleware());
 
 // 受保护 API 路由（/api/session, /api/*）
 app.route('/', apiRoutes);
-
-// aBaiFreeGPT API 代理（需登录，/api/abai/*）
-app.route('/', abaiProxyRoutes);
 
 // 静态资源路由（必须在最后）
 app.route('/', staticRoutes);

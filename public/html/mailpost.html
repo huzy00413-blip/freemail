@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="precheck-hide">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>邮局管理 - freemail</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script src="/js/theme-toggle.js"></script>
+  <script>
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => { if (s && s.strictAdmin) { document.documentElement.classList.remove('precheck-hide'); } else location.replace('/'); })
+        .catch(() => location.replace('/html/login.html?redirect=' + encodeURIComponent('/html/mailpost.html')));
+    })();
+  </script>
+  <style>
+    .mp-container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+    .mp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .mp-header h1 { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .stat-card { background: var(--card-bg, #fff); border-radius: 12px; padding: 18px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .stat-card .stat-label { font-size: 12px; color: #909399; margin-bottom: 6px; }
+    .stat-card .stat-value { font-size: 28px; font-weight: 700; color: #303133; }
+    .stat-card.accent .stat-value { color: #6366f1; }
+    .stat-card.warn .stat-value { color: #e6a23c; }
+    .stat-card.danger .stat-value { color: #f56c6c; }
+    .add-card { background: var(--card-bg, #fff); border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 20px; }
+    .add-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+    .add-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .form-field { display: flex; flex-direction: column; gap: 4px; }
+    .form-field label { font-size: 12px; color: #909399; }
+    .add-form input, .add-form select { padding: 10px 14px; border: 1px solid #dcdfe6; border-radius: 8px; font-size: 14px; outline: none; }
+    .add-form input:focus, .add-form select:focus { border-color: #6366f1; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; white-space: nowrap; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: #6366f1; }
+    .btn-ghost:hover { background: #eef2ff; }
+    .btn-danger { background: #fef0f0; color: #f56c6c; }
+    .btn-danger:hover { background: #fde2e2; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .table-card { background: var(--card-bg, #fff); border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); overflow: hidden; }
+    .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; gap: 10px; }
+    .table-toolbar input, .table-toolbar select { padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 8px; font-size: 13px; outline: none; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600; color: #909399; background: #fafafa; border-bottom: 1px solid #ebeef5; }
+    td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover { background: #fafbfc; }
+    .addr-cell { font-weight: 500; word-break: break-all; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-active { background: #f0f9eb; color: #67c23a; }
+    .badge-expired { background: #fdf6ec; color: #e6a23c; }
+    .badge-disabled { background: #f4f4f5; color: #909399; }
+    .source-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #ecf5ff; color: #409eff; }
+    .actions { display: flex; gap: 6px; }
+    .pagination { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px; }
+    .pagination .page-info { font-size: 13px; color: #909399; min-width: 80px; text-align: center; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #999; }
+    .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; z-index: 9999; opacity: 0; transition: opacity 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .toast.show { opacity: 1; }
+    .toast-success { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+    .toast-error { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+    .domains-list { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .domain-tag { background: #eef2ff; color: #6366f1; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
+    .info-banner { background: #ecf5ff; border: 1px solid #d9ecff; color: #409eff; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+    .info-banner.error { background: #fef0f0; border-color: #fde2e2; color: #f56c6c; }
+    @media (max-width: 640px) {
+      .add-form { flex-direction: column; align-items: stretch; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      th, td { padding: 10px 8px; font-size: 12px; }
+      .table-toolbar { flex-direction: column; align-items: stretch; }
+      .table-card { overflow-x: auto; }
+      .table-card table { min-width: 600px; }
+    }
+  </style>
+</head>
+<body class="admin-page">
+  <div class="topbar">
+    <div class="brand"><span class="brand-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span><span>邮局管理</span></div>
+    <div class="nav-actions">
+      <a href="/html/domains.html" class="btn btn-ghost btn-sm" style="text-decoration:none">域名管理</a>
+      <a href="/html/proxies.html" class="btn btn-ghost btn-sm" style="text-decoration:none">代理池</a>
+      <a href="/html/external-inboxes.html" class="btn btn-ghost btn-sm" style="text-decoration:none">外部接码</a>
+      <a href="/html/admin.html" class="btn btn-ghost btn-sm" style="text-decoration:none">用户管理</a>
+      <a href="/" class="btn btn-ghost btn-sm" style="text-decoration:none">返回邮箱</a>
+    </div>
+  </div>
+  <div class="mp-container">
+    <div class="mp-header">
+      <h1><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>邮局邮箱管理</h1>
+      <button id="refresh-btn" class="btn btn-ghost">刷新</button>
+    </div>
+    <div id="error-banner" class="info-banner error" style="display:none"></div>
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card accent"><div class="stat-label">总邮箱数</div><div class="stat-value" id="stat-total">-</div></div>
+      <div class="stat-card"><div class="stat-label">活跃邮箱</div><div class="stat-value" id="stat-active">-</div></div>
+      <div class="stat-card warn"><div class="stat-label">已过期</div><div class="stat-value" id="stat-expired">-</div></div>
+      <div class="stat-card danger"><div class="stat-label">已禁用</div><div class="stat-value" id="stat-disabled">-</div></div>
+      <div class="stat-card"><div class="stat-label">总邮件数</div><div class="stat-value" id="stat-emails">-</div></div>
+    </div>
+    <div class="add-card">
+      <h2>创建邮局邮箱</h2>
+      <div id="domains-list" class="domains-list"></div>
+      <form id="create-form" class="add-form">
+        <div class="form-field"><label>用户名</label><input id="create-username" type="text" placeholder="例如：zhangsan" required style="min-width:160px" /></div>
+        <div class="form-field"><label>域名</label><select id="create-domain" required></select></div>
+        <div class="form-field"><label>保留天数</label><input id="create-days" type="number" value="30" min="1" max="36500" style="width:100px" /></div>
+        <button type="submit" class="btn btn-primary" id="create-submit">创建邮箱</button>
+      </form>
+    </div>
+    <div class="table-card">
+      <div class="table-toolbar">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="search-input" type="text" placeholder="搜索邮箱地址..." style="width:220px" />
+          <select id="status-filter"><option value="">全部状态</option><option value="active">活跃</option><option value="expired">已过期</option><option value="disabled">已禁用</option></select>
+        </div>
+        <span id="result-count" style="font-size:13px;color:#909399"></span>
+      </div>
+      <table><thead><tr><th>邮箱地址</th><th>状态</th><th>来源</th><th>创建时间</th><th>过期时间</th><th>邮件</th><th>操作</th></tr></thead>
+      <tbody id="mailbox-tbody"><tr><td colspan="7" class="empty-state">加载中...</td></tr></tbody></table>
+      <div class="pagination">
+        <button id="prev-page" class="btn btn-ghost btn-sm">上一页</button>
+        <span id="page-info" class="page-info">-</span>
+        <button id="next-page" class="btn btn-ghost btn-sm">下一页</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script>
+  (function(){
+    'use strict';
+    let currentPage = 1, pageSize = 20, totalPages = 1, currentSearch = '', currentStatus = '';
+    function showToast(m,t){const e=document.getElementById('toast');e.textContent=m;e.className='toast toast-'+(t||'info')+' show';setTimeout(()=>e.classList.remove('show'),3000);}
+    function showError(m){const b=document.getElementById('error-banner');b.textContent=m;b.style.display='block';}
+    function hideError(){document.getElementById('error-banner').style.display='none';}
+    function fmtDate(ts){if(!ts)return'-';const n=Number(ts);const d=new Date(n<1e12?n*1000:n);return isNaN(d.getTime())?'-':d.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});}
+    function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    async function api(p,o){const r=await fetch(p,o||{});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||d.message||'请求失败');return d;}
+    async function loadStats(){try{const d=await api('/api/mailpost/stats');const s=d.data||{};document.getElementById('stat-total').textContent=s.total_mailboxes??0;document.getElementById('stat-active').textContent=s.active_mailboxes??0;document.getElementById('stat-expired').textContent=s.expired_mailboxes??0;document.getElementById('stat-disabled').textContent=s.disabled_mailboxes??0;document.getElementById('stat-emails').textContent=s.total_emails??0;hideError();}catch(e){showError('邮局统计加载失败：'+e.message);}}
+    async function loadDomains(){try{const d=await api('/api/mailpost/domains');const doms=d.domains||[];const sel=document.getElementById('create-domain');const list=document.getElementById('domains-list');sel.innerHTML='';list.innerHTML='';if(!doms.length){sel.innerHTML='<option value="">无可用域名</option>';return;}doms.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);const t=document.createElement('span');t.className='domain-tag';t.textContent='@'+d;list.appendChild(t);});}catch(e){}}
+    async function loadMailboxes(){const tb=document.getElementById('mailbox-tbody');tb.innerHTML='<tr><td colspan="7" class="empty-state">加载中...</td></tr>';try{const p=new URLSearchParams({page:currentPage,page_size:pageSize});if(currentSearch)p.set('search',currentSearch);if(currentStatus)p.set('status',currentStatus);const d=await api('/api/mailpost/mailboxes?'+p.toString());const dd=d.data||{};const mbs=dd.mailboxes||[];totalPages=dd.total_pages||1;document.getElementById('page-info').textContent=currentPage+' / '+totalPages;document.getElementById('result-count').textContent='共 '+(dd.total||0)+' 个';document.getElementById('prev-page').disabled=currentPage<=1;document.getElementById('next-page').disabled=currentPage>=totalPages;if(!mbs.length){tb.innerHTML='<tr><td colspan="7" class="empty-state">暂无邮箱</td></tr>';return;}tb.innerHTML=mbs.map(m=>{let sc='badge-active',st='活跃';if(m.is_expired){sc='badge-expired';st='已过期';}else if(!m.is_active){sc='badge-disabled';st='已禁用';}const sm={admin:'管理员',register:'自助创建',api_v2:'API',unknown:'未知'};return'<tr><td class="addr-cell">'+esc(m.address)+'</td><td><span class="badge '+sc+'">'+st+'</span></td><td><span class="source-badge">'+(sm[m.created_source]||m.created_source||'未知')+'</span></td><td>'+fmtDate(m.created_at)+'</td><td>'+fmtDate(m.expires_at)+'</td><td>'+(m.email_count||0)+'</td><td><div class="actions">'+(m.is_active?'<button class="btn btn-danger btn-sm" data-a="delete" data-id="'+encodeURIComponent(m.id)+'">删除</button>':'<button class="btn btn-primary btn-sm" data-a="enable" data-id="'+encodeURIComponent(m.id)+'">恢复</button>')+'</div></td></tr>';}).join('');tb.querySelectorAll('button[data-a]').forEach(b=>b.addEventListener('click',()=>handleAction(b.dataset.a,decodeURIComponent(b.dataset.id))));hideError();}catch(e){tb.innerHTML='<tr><td colspan="7" class="empty-state">加载失败</td></tr>';showError(e.message);}}
+    async function handleAction(a,id){if(a==='delete'){if(!confirm('确定删除此邮箱？'))return;try{await api('/api/mailpost/mailboxes/'+encodeURIComponent(id),{method:'DELETE'});showToast('已删除','success');loadStats();loadMailboxes();}catch(e){showToast(e.message,'error');}}else if(a==='enable'){try{await api('/api/mailpost/mailboxes/'+encodeURIComponent(id)+'/enable',{method:'POST'});showToast('已恢复','success');loadStats();loadMailboxes();}catch(e){showToast(e.message,'error');}}}
+    document.getElementById('create-form').addEventListener('submit',async e=>{e.preventDefault();const u=document.getElementById('create-username').value.trim();const d=document.getElementById('create-domain').value;const days=parseInt(document.getElementById('create-days').value)||30;if(!u||!d){showToast('请填写完整','error');return;}if(!/^[a-zA-Z0-9]{3,20}$/.test(u)){showToast('用户名仅允许英文/数字，3-20位','error');return;}const btn=document.getElementById('create-submit');btn.disabled=true;btn.textContent='创建中...';try{const r=await api('/api/mailpost/mailboxes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:u+'@'+d,retention_days:days})});showToast('创建成功','success');document.getElementById('create-username').value='';if(r.data&&r.data.mailbox_key){alert('邮箱创建成功！\n地址: '+r.data.address+'\n密钥: '+r.data.mailbox_key+'\n\n请妥善保存（仅显示一次）');}loadStats();loadMailboxes();}catch(err){showToast(err.message,'error');}finally{btn.disabled=false;btn.textContent='创建邮箱';}});
+    let st;document.getElementById('search-input').addEventListener('input',e=>{clearTimeout(st);st=setTimeout(()=>{currentSearch=e.target.value.trim();currentPage=1;loadMailboxes();},400);});
+    document.getElementById('status-filter').addEventListener('change',e=>{currentStatus=e.target.value;currentPage=1;loadMailboxes();});
+    document.getElementById('prev-page').addEventListener('click',()=>{if(currentPage>1){currentPage--;loadMailboxes();}});
+    document.getElementById('next-page').addEventListener('click',()=>{if(currentPage<totalPages){currentPage++;loadMailboxes();}});
+    document.getElementById('refresh-btn').addEventListener('click',()=>{loadStats();loadDomains();loadMailboxes();});
+    loadStats();loadDomains();loadMailboxes();
+  })();
+  </script>
+</body>
+</html>

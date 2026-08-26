@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" class="precheck-hide">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>代理池管理 - freemail</title>
+  <title>浠ｇ悊姹犵鐞?- freemail</title>
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -119,75 +119,75 @@
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
         </svg>
       </span>
-      <span>代理池管理</span>
+      <span>浠ｇ悊姹犵鐞?/span>
     </div>
     <div class="nav-actions">
-      <a href="/html/domains.html" class="btn btn-ghost btn-sm">域名管理</a>
-      <a href="/html/admin.html" class="btn btn-ghost btn-sm">用户管理</a>
-      <a href="/html/mailboxes.html" class="btn btn-ghost btn-sm">邮箱列表</a>
-      <a href="/" class="btn btn-ghost btn-sm">返回邮箱</a>
+      <a href="/html/domains.html" class="btn btn-ghost btn-sm">鍩熷悕绠＄悊</a>
+      <a href="/html/admin.html" class="btn btn-ghost btn-sm">鐢ㄦ埛绠＄悊</a>
+      <a href="/html/mailboxes.html" class="btn btn-ghost btn-sm">閭鍒楄〃</a>
+      <a href="/" class="btn btn-ghost btn-sm">杩斿洖閭</a>
     </div>
   </div>
 
   <div class="proxies-container">
     <div class="proxies-header">
-      <h1>🔄 代理池管理</h1>
-      <button class="btn btn-primary" id="testAllBtn" onclick="testAllProxies()">测试全部代理</button>
+      <h1>馃攧 浠ｇ悊姹犵鐞?/h1>
+      <button class="btn btn-primary" id="testAllBtn" onclick="testAllProxies()">娴嬭瘯鍏ㄩ儴浠ｇ悊</button>
     </div>
 
     <div class="stats-row">
-      <div class="stat-mini"><div class="num" id="stat-total">0</div><div class="lbl">代理总数</div></div>
-      <div class="stat-mini"><div class="num" id="stat-enabled">0</div><div class="lbl">已启用</div></div>
-      <div class="stat-mini"><div class="num" id="stat-available">0</div><div class="lbl">可用</div></div>
+      <div class="stat-mini"><div class="num" id="stat-total">0</div><div class="lbl">浠ｇ悊鎬绘暟</div></div>
+      <div class="stat-mini"><div class="num" id="stat-enabled">0</div><div class="lbl">宸插惎鐢?/div></div>
+      <div class="stat-mini"><div class="num" id="stat-available">0</div><div class="lbl">鍙敤</div></div>
     </div>
 
     <div class="add-card">
-      <h2>添加代理</h2>
+      <h2>娣诲姞浠ｇ悊</h2>
       <div class="add-form">
-        <input type="text" id="newProxy" placeholder="host:port:username:password 或 socks5h://user:pass@host:port" autocomplete="off" />
-        <button class="btn btn-primary" id="addBtn" onclick="addProxy()">添加</button>
-        <button class="btn btn-ghost" onclick="openBatchModal()">批量添加</button>
+        <input type="text" id="newProxy" placeholder="host:port:username:password 鎴?socks5h://user:pass@host:port" autocomplete="off" />
+        <button class="btn btn-primary" id="addBtn" onclick="addProxy()">娣诲姞</button>
+        <button class="btn btn-ghost" onclick="openBatchModal()">鎵归噺娣诲姞</button>
       </div>
       <div class="format-hint">
-        支持格式：<code>host:port:user:pass</code>（默认 socks5h）、<code>socks5h://user:pass@host:port</code>、<code>http://user:pass@host:port</code>、<code>https://...</code>、<code>socks5://...</code><br>
-        推荐 <code>socks5h://</code>（DNS 解析也经由代理）。代理凭据不会返回给前端。
+        鏀寔鏍煎紡锛?code>host:port:user:pass</code>锛堥粯璁?socks5h锛夈€?code>socks5h://user:pass@host:port</code>銆?code>http://user:pass@host:port</code>銆?code>https://...</code>銆?code>socks5://...</code><br>
+        鎺ㄨ崘 <code>socks5h://</code>锛圖NS 瑙ｆ瀽涔熺粡鐢变唬鐞嗭級銆備唬鐞嗗嚟鎹笉浼氳繑鍥炵粰鍓嶇銆?
       </div>
     </div>
 
     <table class="proxy-table">
       <thead>
         <tr>
-          <th>代理地址</th>
-          <th>类型</th>
-          <th>状态</th>
-          <th>检查结果</th>
-          <th>失败次数</th>
-          <th>操作</th>
+          <th>浠ｇ悊鍦板潃</th>
+          <th>绫诲瀷</th>
+          <th>鐘舵€?/th>
+          <th>妫€鏌ョ粨鏋?/th>
+          <th>澶辫触娆℃暟</th>
+          <th>鎿嶄綔</th>
         </tr>
       </thead>
       <tbody id="proxyList">
-        <tr><td colspan="6" class="empty-state">加载中...</td></tr>
+        <tr><td colspan="6" class="empty-state">鍔犺浇涓?..</td></tr>
       </tbody>
     </table>
   </div>
 
-  <!-- 批量添加模态框 -->
+  <!-- 鎵归噺娣诲姞妯℃€佹 -->
   <div class="modal-overlay" id="batchModal" style="display:none;">
     <div class="modal">
       <div class="modal-header">
-        <h2>批量添加代理</h2>
-        <button class="modal-close" onclick="closeBatchModal()">×</button>
+        <h2>鎵归噺娣诲姞浠ｇ悊</h2>
+        <button class="modal-close" onclick="closeBatchModal()">脳</button>
       </div>
       <div class="modal-body">
         <div class="format-hint" style="margin-bottom:12px;">
-          每行一条代理，支持格式：<code>host:port:user:pass</code>、<code>http://user:pass@host:port</code>、<code>socks5://user:pass@host:port</code>、<code>socks5h://user:pass@host:port</code>，最多 500 条。
+          姣忚涓€鏉′唬鐞嗭紝鏀寔鏍煎紡锛?code>host:port:user:pass</code>銆?code>http://user:pass@host:port</code>銆?code>socks5://user:pass@host:port</code>銆?code>socks5h://user:pass@host:port</code>锛屾渶澶?500 鏉°€?
         </div>
         <textarea id="batchProxies" rows="10" placeholder="host:port:username:password&#10;socks5h://user:pass@host:port&#10;http://user:pass@host:port" style="width:100%;font-family:monospace;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--surface);color:var(--text);"></textarea>
         <div id="batchResult" style="margin-top:12px;display:none;"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeBatchModal()">取消</button>
-        <button class="btn btn-primary" id="batchSubmitBtn" onclick="submitBatch()">保存</button>
+        <button class="btn btn-ghost" onclick="closeBatchModal()">鍙栨秷</button>
+        <button class="btn btn-primary" id="batchSubmitBtn" onclick="submitBatch()">淇濆瓨</button>
       </div>
     </div>
   </div>
@@ -195,7 +195,7 @@
   <div class="toast" id="toast"></div>
 
 <script>
-// 测试结果缓存（按 proxy_display 索引）
+// 娴嬭瘯缁撴灉缂撳瓨锛堟寜 proxy_display 绱㈠紩锛?
 let testResults = {};
 
 function showToast(msg, type) {
@@ -215,16 +215,16 @@ function schemeBadge(scheme) {
 }
 
 function statusBadge(status) {
-  if (status === 'ok') return '<span class="badge badge-ok">正常</span>';
-  if (status === 'failed') return '<span class="badge badge-failed">失败</span>';
-  return '<span class="badge badge-unknown">未知</span>';
+  if (status === 'ok') return '<span class="badge badge-ok">姝ｅ父</span>';
+  if (status === 'failed') return '<span class="badge badge-failed">澶辫触</span>';
+  return '<span class="badge badge-unknown">鏈煡</span>';
 }
 
 async function loadProxies() {
   const tbody = document.getElementById('proxyList');
   try {
     const r = await fetch('/api/admin/proxies', { credentials: 'include' });
-    if (r.status === 403) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">需要管理员权限</td></tr>'; return; }
+    if (r.status === 403) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">闇€瑕佺鐞嗗憳鏉冮檺</td></tr>'; return; }
     const d = await r.json();
     const proxies = d.proxies || [];
 
@@ -233,7 +233,7 @@ async function loadProxies() {
     document.getElementById('stat-available').textContent = proxies.filter(p => p.enabled && p.last_check_status !== 'failed').length;
 
     if (!proxies.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无代理，请添加</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">鏆傛棤浠ｇ悊锛岃娣诲姞</td></tr>';
       return;
     }
     tbody.innerHTML = proxies.map(p => {
@@ -241,40 +241,40 @@ async function loadProxies() {
       let checkCell = statusBadge(p.last_check_status);
       if (tr) {
         if (tr.ok) {
-          checkCell = `<span class="badge badge-ok">正常</span> <span class="latency-ok">${tr.latency_ms}ms</span>`;
+          checkCell = `<span class="badge badge-ok">姝ｅ父</span> <span class="latency-ok">${tr.latency_ms}ms</span>`;
         } else {
-          checkCell = `<span class="badge badge-failed">失败</span> <span class="latency-fail" title="${escapeHtml(tr.error || '')}">${escapeHtml((tr.error || '').slice(0, 30))}</span>`;
+          checkCell = `<span class="badge badge-failed">澶辫触</span> <span class="latency-fail" title="${escapeHtml(tr.error || '')}">${escapeHtml((tr.error || '').slice(0, 30))}</span>`;
         }
       }
       return `
       <tr>
         <td class="proxy-host">${escapeHtml(p.proxy_display)}</td>
         <td>${schemeBadge(p.proxy_scheme)}</td>
-        <td><span class="badge ${p.enabled ? 'badge-on' : 'badge-off'}">${p.enabled ? '已启用' : '已禁用'}</span></td>
+        <td><span class="badge ${p.enabled ? 'badge-on' : 'badge-off'}">${p.enabled ? '宸插惎鐢? : '宸茬鐢?}</span></td>
         <td>${checkCell}</td>
         <td>${p.fail_count || 0}</td>
         <td>
           <div class="actions-cell">
             <button class="btn btn-sm ${p.enabled ? 'btn-danger' : 'btn-success'}" onclick="toggleProxy(${p.id}, ${!p.enabled})">
-              ${p.enabled ? '禁用' : '启用'}
+              ${p.enabled ? '绂佺敤' : '鍚敤'}
             </button>
-            <button class="btn btn-sm btn-danger" onclick="deleteProxy(${p.id}, '${escapeHtml(p.proxy_display)}')">删除</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProxy(${p.id}, '${escapeHtml(p.proxy_display)}')">鍒犻櫎</button>
           </div>
         </td>
       </tr>
     `;}).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">加载失败：' + escapeHtml(e.message) + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">鍔犺浇澶辫触锛? + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
 async function addProxy() {
   const input = document.getElementById('newProxy');
   const proxy = input.value.trim();
-  if (!proxy) { showToast('请输入代理地址', 'error'); return; }
+  if (!proxy) { showToast('璇疯緭鍏ヤ唬鐞嗗湴鍧€', 'error'); return; }
 
   const btn = document.getElementById('addBtn');
-  btn.disabled = true; btn.textContent = '添加中...';
+  btn.disabled = true; btn.textContent = '娣诲姞涓?..';
   try {
     const r = await fetch('/api/admin/proxies', {
       method: 'POST',
@@ -283,14 +283,14 @@ async function addProxy() {
       body: JSON.stringify({ proxy })
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '添加失败');
-    showToast('代理已添加', 'success');
+    if (!r.ok) throw new Error(d.error || '娣诲姞澶辫触');
+    showToast('浠ｇ悊宸叉坊鍔?, 'success');
     input.value = '';
     loadProxies();
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
-    btn.disabled = false; btn.textContent = '添加';
+    btn.disabled = false; btn.textContent = '娣诲姞';
   }
 }
 
@@ -303,8 +303,8 @@ async function toggleProxy(id, enabled) {
       body: JSON.stringify({ enabled })
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '操作失败');
-    showToast(enabled ? '已启用' : '已禁用', 'success');
+    if (!r.ok) throw new Error(d.error || '鎿嶄綔澶辫触');
+    showToast(enabled ? '宸插惎鐢? : '宸茬鐢?, 'success');
     loadProxies();
   } catch (e) {
     showToast(e.message, 'error');
@@ -312,15 +312,15 @@ async function toggleProxy(id, enabled) {
 }
 
 async function deleteProxy(id, display) {
-  if (!confirm(`确定删除代理 ${display}？`)) return;
+  if (!confirm(`纭畾鍒犻櫎浠ｇ悊 ${display}锛焋)) return;
   try {
     const r = await fetch('/api/admin/proxies/' + id, {
       method: 'DELETE',
       credentials: 'include'
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '删除失败');
-    showToast('代理已删除', 'success');
+    if (!r.ok) throw new Error(d.error || '鍒犻櫎澶辫触');
+    showToast('浠ｇ悊宸插垹闄?, 'success');
     loadProxies();
   } catch (e) {
     showToast(e.message, 'error');
@@ -329,25 +329,25 @@ async function deleteProxy(id, display) {
 
 async function testAllProxies() {
   const btn = document.getElementById('testAllBtn');
-  btn.disabled = true; btn.textContent = '测试中...';
+  btn.disabled = true; btn.textContent = '娴嬭瘯涓?..';
   try {
     const r = await fetch('/api/admin/proxies/test', {
       method: 'POST',
       credentials: 'include'
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '测试失败');
+    if (!r.ok) throw new Error(d.error || '娴嬭瘯澶辫触');
 
-    // 缓存测试结果
+    // 缂撳瓨娴嬭瘯缁撴灉
     testResults = {};
     (d.items || []).forEach(item => { testResults[item.address] = item; });
 
-    showToast(`测试完成：${d.available}/${d.total} 可用`, d.failed > 0 ? 'error' : 'success');
+    showToast(`娴嬭瘯瀹屾垚锛?{d.available}/${d.total} 鍙敤`, d.failed > 0 ? 'error' : 'success');
     await loadProxies();
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
-    btn.disabled = false; btn.textContent = '测试全部代理';
+    btn.disabled = false; btn.textContent = '娴嬭瘯鍏ㄩ儴浠ｇ悊';
   }
 }
 
@@ -363,10 +363,10 @@ function closeBatchModal() {
 
 async function submitBatch() {
   const text = document.getElementById('batchProxies').value;
-  if (!text.trim()) { showToast('请输入代理列表', 'error'); return; }
+  if (!text.trim()) { showToast('璇疯緭鍏ヤ唬鐞嗗垪琛?, 'error'); return; }
 
   const btn = document.getElementById('batchSubmitBtn');
-  btn.disabled = true; btn.textContent = '保存中...';
+  btn.disabled = true; btn.textContent = '淇濆瓨涓?..';
   const resultDiv = document.getElementById('batchResult');
   try {
     const r = await fetch('/api/admin/proxies/batch', {
@@ -376,13 +376,13 @@ async function submitBatch() {
       body: JSON.stringify({ proxies: text })
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '批量添加失败');
+    if (!r.ok) throw new Error(d.error || '鎵归噺娣诲姞澶辫触');
 
     let html = `<div class="batch-errors">`;
-    html += `<div class="ok-line">✓ 成功添加 ${d.added} 条，失败 ${d.failed} 条（共 ${d.total} 条）</div>`;
+    html += `<div class="ok-line">鉁?鎴愬姛娣诲姞 ${d.added} 鏉★紝澶辫触 ${d.failed} 鏉★紙鍏?${d.total} 鏉★級</div>`;
     if (d.errors && d.errors.length) {
       d.errors.forEach(e => {
-        html += `<div class="err-line">第 ${e.line} 行：${escapeHtml(e.error)}</div>`;
+        html += `<div class="err-line">绗?${e.line} 琛岋細${escapeHtml(e.error)}</div>`;
       });
     }
     html += `</div>`;
@@ -390,7 +390,7 @@ async function submitBatch() {
     resultDiv.style.display = 'block';
 
     if (d.added > 0) {
-      showToast(`成功添加 ${d.added} 条代理`, 'success');
+      showToast(`鎴愬姛娣诲姞 ${d.added} 鏉′唬鐞哷, 'success');
       loadProxies();
       if (!d.failed) {
         setTimeout(closeBatchModal, 1500);
@@ -399,7 +399,7 @@ async function submitBatch() {
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
-    btn.disabled = false; btn.textContent = '保存';
+    btn.disabled = false; btn.textContent = '淇濆瓨';
   }
 }
 

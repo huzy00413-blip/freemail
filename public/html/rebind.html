@@ -65,6 +65,15 @@
     .disabled-overlay { position: relative; }
     .disabled-overlay::after { content: ''; position: absolute; inset: 0; background: rgba(255,255,255,0.6); backdrop-filter: blur(2px); border-radius: 10px; }
     .disabled-banner { text-align: center; padding: 20px; color: #991b1b; font-weight: 600; }
+    @media (max-width: 640px) {
+      .rebind-container { padding: 12px; }
+      .rebind-card { padding: 16px; border-radius: 10px; }
+      .form-row { flex-direction: column; }
+      .form-row .form-group { width: 100%; }
+      .topbar { flex-wrap: wrap; gap: 8px; }
+      .topbar .nav-actions { flex-wrap: wrap; }
+      .topbar .btn { padding: 6px 10px; font-size: 12px; }
+    }
   </style>
 </head>
 <body>
@@ -238,6 +247,7 @@
         displayEl.className = `inbox-display ${type}`;
         let badge = '';
         if (type === 'freemail') badge = '<span class="inbox-type-badge badge-freemail">freemail 托管</span>';
+        else if (type === 'mailpost') badge = '<span class="inbox-type-badge badge-freemail" style="background:#e0f2fe;color:#0284c7">邮局系统</span>';
         else if (type === 'external') badge = '<span class="inbox-type-badge badge-external">外部接码</span>';
         else badge = '<span class="inbox-type-badge badge-none">未配置</span>';
         displayEl.innerHTML = `接码方式：${badge} ${data.inbox_url || ''} ${data.description || ''}`;

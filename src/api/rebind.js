@@ -8,6 +8,7 @@
 
 import { jsonResponse, errorResponse, isStrictAdmin, getUserFromSession, getUserId } from './helpers.js';
 import { getExternalInbox } from './external-inboxes.js';
+import { getMailpostMailbox } from './mailpost.js';
 
 const REBIND_SERVICE_URL = (globalThis.REBIND_SERVICE_URL || '').replace(/\/$/, '');
 const REBIND_SERVICE_TOKEN = globalThis.REBIND_SERVICE_TOKEN || '';
@@ -40,18 +41,20 @@ async function findFreemailMailbox(db, email) {
 
 /**
  * 确定邮箱的接码配置。
- * 返回 { type: 'freemail'|'external'|'none', mail_api?, inbox_token?, inbox_url?, mailbox? }
+ * 返回 { type: 'freemail'|'mailpost'|'external'|'none', mail_api?, inbox_token?, inbox_url?, mailbox? }
  */
-async function resolveInboxConfig(db, email, label) {
+async function resolveInboxConfig(db, email, label, options, taskId) {
   const freemail = await findFreemailMailbox(db, email);
   if (freemail) {
     const token = generateToken(24);
-    // 写入 token 表
     try {
       await db.prepare(
-        'INSERT INTO rebind_inbox_tokens (token, email, label, expires_at) VALUES (?, ?, ?, datetime("now", "+30 minutes"))'
-      ).bind(token, email, label).run();
-    } catch (_) {}
+        `INSERT INTO rebind_inbox_tokens (token, user_id, mailbox_id, task_id, mailbox_type, expires_at)
+         VALUES (?, ?, ?, ?, ?, datetime("now", "+30 minutes"))`
+      ).bind(token, freemail.user_id || 0, freemail.id, taskId || null, label).run();
+    } catch (e) {
+      console.error('[rebind] freemail token insert failed:', e.message);
+    }
     return {
       type: 'freemail',
       mail_api: `${WORKER_ORIGIN}/rebind/${label}-inbox`,
@@ -66,6 +69,25 @@ async function resolveInboxConfig(db, email, label) {
     return {
       type: 'external',
       inbox_url: external.inbox_url,
+    };
+  }
+
+  // 查邮局系统
+  const mp = await getMailpostMailbox(options, email);
+  if (mp.exists && mp.mailbox && mp.mailbox.is_active !== false && !mp.mailbox.is_expired) {
+    const token = generateToken(24);
+    try {
+      await db.prepare(
+        `INSERT INTO rebind_inbox_tokens (token, mailbox_id, task_id, mailbox_type, expires_at, metadata)
+         VALUES (?, 0, ?, ?, datetime("now", "+30 minutes"), ?)`
+      ).bind(token, taskId || null, 'mailpost-' + label, JSON.stringify({ address: email, key: mp.mailbox.mailbox_key })).run();
+    } catch (e) {
+      console.error('[rebind] mailpost token insert failed:', e.message);
+    }
+    return {
+      type: 'mailpost',
+      mail_api: `${WORKER_ORIGIN}/rebind/mailpost-inbox`,
+      inbox_token: token,
     };
   }
 
@@ -108,6 +130,14 @@ export async function handleRebindApi(request, db, url, path, options) {
         description: '外部接码地址绑定',
       });
     }
+    const mp = await getMailpostMailbox(options, email);
+    if (mp.exists && mp.mailbox && mp.mailbox.is_active !== false && !mp.mailbox.is_expired) {
+      return jsonResponse({
+        type: 'mailpost',
+        inbox_url: `${WORKER_ORIGIN}/rebind/mailpost-inbox`,
+        description: '邮局系统邮箱，自动收信',
+      });
+    }
     return jsonResponse({
       type: 'none',
       inbox_url: '',
@@ -136,20 +166,20 @@ export async function handleRebindApi(request, db, url, path, options) {
       return errorResponse('换绑服务未配置', 503);
     }
 
+    // 生成任务 ID（提前生成，供 token 绑定 task_id）
+    const taskId = generateToken(16);
+
     // 确定旧邮箱接码配置
-    const oldConfig = await resolveInboxConfig(db, oldEmail, 'old');
+    const oldConfig = await resolveInboxConfig(db, oldEmail, 'old', options, taskId);
     if (oldConfig.type === 'none') {
       return errorResponse('旧邮箱未配置接码地址，请在外部接码管理中添加', 400);
     }
 
     // 确定新邮箱接码配置
-    const newConfig = await resolveInboxConfig(db, newEmail, 'new');
+    const newConfig = await resolveInboxConfig(db, newEmail, 'new', options, taskId);
     if (newConfig.type === 'none') {
       return errorResponse('新邮箱未配置接码地址，请在外部接码管理中添加', 400);
     }
-
-    // 生成任务 ID
-    const taskId = generateToken(16);
 
     // 写入 D1 任务记录
     try {
@@ -171,9 +201,9 @@ export async function handleRebindApi(request, db, url, path, options) {
       mail_timeout: 180,
     };
 
-    // freemail 邮箱：传 mail_api + inbox_token
+    // freemail/邮局邮箱：传 mail_api + inbox_token
     // 外部邮箱：传 inbox_url
-    if (oldConfig.type === 'freemail') {
+    if (oldConfig.type === 'freemail' || oldConfig.type === 'mailpost') {
       pythonParams.old_mail_api = oldConfig.mail_api;
       pythonParams.old_inbox_token = oldConfig.inbox_token;
     } else {
@@ -182,7 +212,7 @@ export async function handleRebindApi(request, db, url, path, options) {
       pythonParams.old_inbox_token = '';
     }
 
-    if (newConfig.type === 'freemail') {
+    if (newConfig.type === 'freemail' || newConfig.type === 'mailpost') {
       pythonParams.new_mail_api = newConfig.mail_api;
       pythonParams.new_inbox_token = newConfig.inbox_token;
     } else {

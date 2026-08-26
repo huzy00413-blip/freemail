@@ -1,0 +1,24 @@
+rebind.your-domain.com {
+	reverse_proxy 127.0.0.1:8000 {
+		health_uri /health
+		health_interval 30s
+		health_timeout 5s
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	log {
+		output file /var/log/caddy/rebind.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format json
+	}
+	encode gzip zstd
+}
