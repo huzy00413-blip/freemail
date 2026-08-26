@@ -664,6 +664,138 @@ class TaskCancelledError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# SSRF 防护：禁止访问内网、回环地址和云元数据地址
+# ---------------------------------------------------------------------------
+import ipaddress
+import socket
+import re as _re
+
+_BLOCKED_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "169.254.169.254", "metadata"}
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    """判断 IP 是否为内网/回环/链路本地地址。"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        )
+    except ValueError:
+        return False
+
+
+def _validate_external_url(url: str) -> tuple[bool, str]:
+    """验证外部接码 URL 是否安全（防 SSRF）。返回 (ok, error)。"""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "URL 格式非法"
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, "只允许 http/https 协议"
+    hostname = (parsed.hostname or "").lower().strip()
+    if not hostname:
+        return False, "URL 缺少 hostname"
+    if hostname in _BLOCKED_HOSTNAMES:
+        return False, "禁止访问回环或元数据地址"
+    # DNS 解析后检查 IP（防止 DNS rebinding）
+    try:
+        infos = socket.getaddrinfo(hostname, parsed.port or 80)
+        for info in infos:
+            ip_str = info[4][0]
+            if _is_private_ip(ip_str):
+                return False, f"禁止访问内网地址 ({ip_str})"
+    except socket.gaierror:
+        return False, "DNS 解析失败"
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# 通用收码函数：从外部接码 URL 轮询并提取验证码
+# ---------------------------------------------------------------------------
+_CODE_PATTERNS = [
+    _re.compile(r'(?i)(?:verification\s*code|security\s*code|验证码|校验码|otp|code)[^0-9]{0,40}([0-9]{4,8})'),
+    _re.compile(r'\b([0-9]{6})\b'),
+    _re.compile(r'\b([0-9]{4,8})\b'),
+]
+_JSON_CODE_KEYS = {"code", "otp", "verification_code", "security_code", "验证码", "vcode", "verify_code"}
+
+
+def _find_code_in_json(obj, depth: int = 0) -> str | None:
+    """递归在 JSON 中查找验证码字段。"""
+    if depth > 5:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k.lower() in _JSON_CODE_KEYS and isinstance(v, str):
+                if _re.match(r'^[0-9]{4,8}$', v):
+                    return v
+            r = _find_code_in_json(v, depth + 1)
+            if r:
+                return r
+    elif isinstance(obj, list):
+        for item in obj:
+            r = _find_code_in_json(item, depth + 1)
+            if r:
+                return r
+    return None
+
+
+def _extract_code(response) -> str | None:
+    """从 HTTP 响应中提取验证码。支持 JSON 和纯文本。"""
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type:
+        try:
+            code = _find_code_in_json(response.json())
+            if code:
+                return code
+        except Exception:
+            pass
+    text = response.text or ""
+    for pattern in _CODE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def wait_code_from_url(inbox_url: str, timeout: float, cancel_event=None) -> str:
+    """轮询外部接码 URL 直到获取验证码或超时。"""
+    # SSRF 校验（每次请求前都校验，防止 DNS rebinding）
+    ok, err = _validate_external_url(inbox_url)
+    if not ok:
+        raise ValueError(f"接码地址不安全：{err}")
+
+    deadline = time.time() + timeout
+    seen_codes: set[str] = set()
+    while time.time() < deadline:
+        if cancel_event and cancel_event.is_set():
+            raise TaskCancelledError("任务已取消")
+        try:
+            response = _original_requests_get(
+                inbox_url,
+                timeout=10,
+                allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (freemail-rebind)"},
+            )
+            response.raise_for_status()
+            code = _extract_code(response)
+            if code and code not in seen_codes:
+                return code
+            if code:
+                seen_codes.add(code)
+        except TaskCancelledError:
+            raise
+        except Exception as e:
+            print(f"[external-inbox] 轮询失败: {e}", file=sys.stderr)
+        time.sleep(3)
+    raise TimeoutError("等待验证码超时")
+
+
 def _patched_requests_get(url, **kwargs):
     # 检查取消事件
     cancel_evt = getattr(_thread_local, "cancel_event", None)
@@ -671,17 +803,28 @@ def _patched_requests_get(url, **kwargs):
         raise TaskCancelledError("任务已被取消")
 
     url_text = str(url)
+    # freemail 收信地址：注入 token
     if "/rebind/old-inbox" in url_text:
         token = getattr(_thread_local, "old_inbox_token", None)
     elif "/rebind/new-inbox" in url_text or "/rebind/inbox" in url_text:
         token = getattr(_thread_local, "new_inbox_token", None)
     else:
         token = None
-    is_inbox = bool(token)
-    if is_inbox:
+
+    # 外部接码地址：不注入 token，但更新任务状态
+    old_ext_url = getattr(_thread_local, "old_inbox_url", "")
+    new_ext_url = getattr(_thread_local, "new_inbox_url", "")
+    is_external_inbox = bool(old_ext_url and url_text.startswith(old_ext_url)) or bool(
+        new_ext_url and url_text.startswith(new_ext_url)
+    )
+
+    is_inbox = bool(token) or is_external_inbox
+    if token:
         headers = dict(kwargs.get("headers") or {})
         headers["X-Rebind-Token"] = token
         kwargs["headers"] = headers
+
+    if is_inbox:
         # 更新状态为 waiting_code
         tid = getattr(_thread_local, "task_id", None)
         if tid:
@@ -766,8 +909,21 @@ def _run_task(task_id: str, params: dict[str, Any]) -> None:
         # 设置线程本地变量
         _thread_local.old_inbox_token = params.get("old_inbox_token", "")
         _thread_local.new_inbox_token = params.get("new_inbox_token", "")
+        _thread_local.old_inbox_url = params.get("old_inbox_url", "")
+        _thread_local.new_inbox_url = params.get("new_inbox_url", "")
         _thread_local.cancel_event = cancel_evt
         _thread_local.task_id = task_id
+
+        # 确定收信地址：外部邮箱用 inbox_url，freemail 邮箱用 mail_api
+        old_mail_api = params.get("old_inbox_url") or params.get("old_mail_api", "")
+        new_mail_api = params.get("new_inbox_url") or params.get("new_mail_api", "")
+
+        # SSRF 校验外部接码地址
+        for label, url_val in (("old", old_mail_api), ("new", new_mail_api)):
+            if url_val and "/rebind/" not in url_val:
+                ok, err = _validate_external_url(url_val)
+                if not ok:
+                    raise ValueError(f"{label} 邮箱接码地址不安全：{err}")
 
         try:
             result = run_rebind_email(
@@ -775,15 +931,18 @@ def _run_task(task_id: str, params: dict[str, Any]) -> None:
                 password=params["password"],
                 totp_secret=params["totp_secret"],
                 new_email=params["new_email"],
-                old_mail_api=params["old_mail_api"],
-                new_mail_api=params["new_mail_api"],
+                old_mail_api=old_mail_api,
+                new_mail_api=new_mail_api,
                 proxy=proxy,
                 out_dir=str(task_dir),
                 mail_timeout=float(params.get("mail_timeout") or DEFAULT_MAIL_TIMEOUT),
             )
         finally:
             # 清除线程本地变量
-            for attr in ("old_inbox_token", "new_inbox_token", "cancel_event", "task_id"):
+            for attr in (
+                "old_inbox_token", "new_inbox_token", "old_inbox_url",
+                "new_inbox_url", "cancel_event", "task_id",
+            ):
                 if hasattr(_thread_local, attr):
                     delattr(_thread_local, attr)
 
