@@ -1,598 +1,360 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="precheck-hide">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ChatGPT 换绑邮箱 - freemail</title>
+  <title>换绑邮箱 - iDing's临时邮箱</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/app-modal.css" />
+  <script src="/js/theme-toggle.js"></script>
+  <script src="/js/auth-guard.js" defer></script>
+  <script>
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => {
+          if (s && s.user){
+            try{ document.documentElement.classList.remove('precheck-hide'); }catch(_){ }
+            return;
+          }
+          location.replace('/');
+        })
+        .catch(() => {
+          if (window.AuthGuard) { window.AuthGuard.goLoading('/html/rebind.html', '正在校验登录…'); }
+          else { location.replace('/templates/loading.html?redirect=%2Fhtml%2Frebind.html'); }
+        });
+    })();
+  </script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: #f5f7fa;
-      color: #1a1a2e;
-      min-height: 100vh;
-      padding: 24px 16px;
-    }
-    .container { max-width: 680px; margin: 0 auto; }
-    .header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 24px;
-    }
-    .header h1 { font-size: 22px; font-weight: 700; }
-    .header a { color: #4f6ef7; text-decoration: none; font-size: 14px; }
-    .header a:hover { text-decoration: underline; }
-
-    .card {
-      background: #fff; border-radius: 14px; padding: 24px 28px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-      margin-bottom: 20px;
-    }
-    .card h2 {
-      font-size: 16px; font-weight: 600; color: #333;
-      margin-bottom: 18px; padding-bottom: 12px;
-      border-bottom: 1px solid #f0f0f0;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .card h2 .step-num {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 24px; height: 24px; border-radius: 50%;
-      background: #4f6ef7; color: #fff; font-size: 12px; font-weight: 700;
-    }
-
-    .form-group { margin-bottom: 16px; }
-    .form-group:last-child { margin-bottom: 0; }
-    .form-group label {
-      display: block; font-size: 13px; font-weight: 600; color: #555;
-      margin-bottom: 6px;
-    }
-    .form-group input, .form-group select {
-      width: 100%; padding: 10px 14px; border: 1px solid #dcdfe6;
-      border-radius: 8px; font-size: 14px; outline: none;
-      transition: border-color 0.2s; background: #fff;
-      font-family: inherit;
-    }
-    .form-group input:focus, .form-group select:focus { border-color: #4f6ef7; }
-    .form-group input:read-only { background: #f5f7fa; cursor: not-allowed; color: #888; }
-    .form-group .hint { font-size: 12px; color: #999; margin-top: 4px; line-height: 1.5; }
-    .form-group .hint code {
-      background: #f5f7fa; padding: 1px 6px; border-radius: 3px;
-      font-size: 11px; font-family: "Cascadia Code", "Fira Code", monospace;
-    }
-
-    .recv-box {
-      background: #f8f9fb; border: 1px solid #e8eaed; border-radius: 8px;
-      padding: 12px 14px; margin-top: 8px;
-    }
-    .recv-box .recv-label { font-size: 12px; color: #888; margin-bottom: 4px; }
-    .recv-box .recv-url {
-      font-family: "Cascadia Code", "Fira Code", monospace;
-      font-size: 12px; color: #4f6ef7; word-break: break-all;
-    }
-
-    .btn {
-      display: inline-block; padding: 11px 28px; border: none;
-      border-radius: 8px; font-size: 15px; font-weight: 600;
-      cursor: pointer; transition: opacity 0.2s, background 0.2s;
-      font-family: inherit;
-    }
-    .btn-primary { background: #4f6ef7; color: #fff; }
-    .btn-primary:hover { opacity: 0.9; }
-    .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
-    .btn-danger { background: #f56c6c; color: #fff; }
-    .btn-danger:hover { opacity: 0.9; }
-    .btn-danger:disabled { background: #f8b4b4; cursor: not-allowed; }
-
-    /* 步骤指示器 */
-    .steps {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 20px; position: relative;
-    }
-    .steps::before {
-      content: ''; position: absolute; top: 15px; left: 10%; right: 10%;
-      height: 2px; background: #e8eaed; z-index: 0;
-    }
-    .step {
-      display: flex; flex-direction: column; align-items: center;
-      position: relative; z-index: 1; flex: 1;
-    }
-    .step-dot {
-      width: 30px; height: 30px; border-radius: 50%;
-      background: #fff; border: 2px solid #dcdfe6;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 12px; font-weight: 700; color: #bbb;
-      transition: all 0.3s;
-    }
-    .step.active .step-dot {
-      border-color: #4f6ef7; background: #4f6ef7; color: #fff;
-      box-shadow: 0 0 0 4px rgba(79,110,247,0.15);
-    }
-    .step.done .step-dot {
-      border-color: #67c23a; background: #67c23a; color: #fff;
-    }
-    .step.done .step-dot::after { content: '✓'; }
-    .step.done .step-dot span { display: none; }
-    .step-label {
-      font-size: 11px; color: #999; margin-top: 6px; text-align: center;
-      white-space: nowrap;
-    }
-    .step.active .step-label { color: #4f6ef7; font-weight: 600; }
-    .step.done .step-label { color: #67c23a; }
-
-    .status-row {
-      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
-    }
-    .badge {
-      display: inline-block; padding: 3px 10px; border-radius: 4px;
-      font-size: 12px; font-weight: 600;
-    }
-    .badge-created { background: #fdf6ec; color: #e6a23c; }
-    .badge-running { background: #ecf5ff; color: #409eff; }
-    .badge-waiting_code { background: #f0f0ff; color: #7c5cfc; }
-    .badge-success { background: #f0f9eb; color: #67c23a; }
-    .badge-failed { background: #fef0f0; color: #f56c6c; }
-    .badge-cancelled { background: #f4f4f5; color: #909399; }
-    .badge-expired { background: #fdf6ec; color: #e6a23c; }
-
-    .progress-bar {
-      height: 4px; background: #f0f0f0; border-radius: 2px;
-      overflow: hidden; margin-bottom: 16px;
-    }
-    .progress-fill {
-      height: 100%; background: #4f6ef7; border-radius: 2px;
-      transition: width 0.5s ease; width: 0%;
-    }
-
-    .log-area {
-      background: #1e1e2e; color: #cdd6f4; padding: 14px;
-      border-radius: 8px; font-family: "Cascadia Code", "Fira Code", monospace;
-      font-size: 12px; line-height: 1.7; max-height: 260px;
-      overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-    }
-
-    .result-box {
-      margin-top: 14px; padding: 14px; border-radius: 8px;
-      background: #f0f9eb; border: 1px solid #e1f3d8;
-    }
-    .result-box.fail { background: #fef0f0; border-color: #fde2e2; }
-    .result-box .row { margin-bottom: 8px; font-size: 13px; }
-    .result-box .row:last-child { margin-bottom: 0; }
-    .result-box .row span:first-child { color: #888; display: inline-block; min-width: 90px; }
-
-    .action-row { margin-top: 16px; text-align: right; }
-
-    .not-enabled { text-align: center; padding: 40px 20px; color: #999; }
-    .not-enabled h3 { margin-bottom: 10px; color: #666; }
-
-    .info-banner {
-      background: #ecf5ff; border: 1px solid #d9ecff; border-radius: 8px;
-      padding: 10px 14px; font-size: 12px; color: #409eff; line-height: 1.6;
-      margin-bottom: 16px;
-    }
+    .precheck-hide body{ visibility: hidden !important; }
+    .rebind-container { max-width: 720px; margin: 0 auto; padding: 24px; }
+    .rebind-section { background: var(--bg-card, #fff); border: 1px solid var(--border-color, #e5e7eb); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .rebind-section-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .rebind-section-title .step-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary, #3b82f6); color: #fff; font-size: 13px; }
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary, #6b7280); }
+    .form-input { width: 100%; padding: 9px 12px; border: 1px solid var(--border-color, #d1d5db); border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+    .form-input:focus { outline: none; border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .form-select { width: 100%; padding: 9px 12px; border: 1px solid var(--border-color, #d1d5db); border-radius: 6px; font-size: 14px; box-sizing: border-box; background: var(--bg-input, #fff); }
+    .inbox-display { padding: 8px 12px; background: var(--bg-secondary, #f9fafb); border-radius: 6px; font-size: 13px; font-family: monospace; word-break: break-all; margin-top: 6px; }
+    .inbox-display.freemail { border-left: 3px solid #22c55e; }
+    .inbox-display.external { border-left: 3px solid #3b82f6; }
+    .inbox-display.none { border-left: 3px solid #ef4444; color: #991b1b; }
+    .inbox-type-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+    .badge-freemail { background: #dcfce7; color: #166534; }
+    .badge-external { background: #dbeafe; color: #1e40af; }
+    .badge-none { background: #fee2e2; color: #991b1b; }
+    .status-indicator { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #9ca3af; }
+    .status-dot.active { background: #3b82f6; animation: pulse 1.5s infinite; }
+    .status-dot.success { background: #22c55e; }
+    .status-dot.error { background: #ef4444; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+    .progress-bar { width: 100%; height: 6px; background: var(--bg-secondary, #e5e7eb); border-radius: 3px; overflow: hidden; margin: 10px 0; }
+    .progress-fill { height: 100%; background: var(--primary, #3b82f6); transition: width 0.3s; width: 0%; }
+    .error-box { padding: 10px 14px; background: #fee2e2; color: #991b1b; border-radius: 6px; font-size: 13px; margin-top: 10px; display: none; }
+    .info-note { font-size: 12px; color: var(--text-secondary, #6b7280); margin-top: 6px; line-height: 1.5; }
+    .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+    .btn-primary { flex: 1; padding: 11px; background: var(--primary, #3b82f6); color: #fff; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { padding: 11px 20px; background: var(--bg-secondary, #f3f4f6); color: var(--text, #111827); border: 1px solid var(--border-color, #d1d5db); border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .btn-danger { padding: 11px 20px; background: #ef4444; color: #fff; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .disabled-overlay { position: relative; }
+    .disabled-overlay::after { content: ''; position: absolute; inset: 0; background: rgba(255,255,255,0.6); backdrop-filter: blur(2px); border-radius: 10px; }
+    .disabled-banner { text-align: center; padding: 20px; color: #991b1b; font-weight: 600; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>🔄 ChatGPT 换绑邮箱</h1>
-      <a href="/">← 返回邮箱</a>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+      </span>
+      <span>换绑邮箱</span>
     </div>
-
-    <div id="notEnabled" class="card not-enabled" style="display:none">
-      <h3>换绑功能未启用</h3>
-      <p style="font-size:13px" id="notEnabledReason">请配置 REBIND_SERVICE_URL 后重新部署。</p>
-    </div>
-
-    <div id="mainContent">
-      <!-- 第一段：账号信息 -->
-      <div class="card" id="cardAccount">
-        <h2><span class="step-num">1</span> 账号信息</h2>
-        <div class="info-banner">
-          旧邮箱登录若触发邮箱验证码，将从<strong>旧邮箱</strong>收取；点击换绑后，新邮箱再接收换绑验证码。两个邮箱都必须是 freemail 中已有且你有权限读取的邮箱。
-        </div>
-        <div class="form-group">
-          <label>旧邮箱（ChatGPT 登录邮箱）</label>
-          <input type="email" id="oldEmail" list="mailboxOptions" placeholder="old@example.com" autocomplete="off" />
-          <datalist id="mailboxOptions"></datalist>
-        </div>
-        <div class="form-group" id="oldRecvGroup" style="display:none">
-          <label>旧邮箱接码地址</label>
-          <div class="recv-box">
-            <div class="recv-label">登录触发旧邮箱验证码时，服务从此地址读取：</div>
-            <div class="recv-url" id="oldRecvUrl"></div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>密码</label>
-          <input type="password" id="password" placeholder="ChatGPT 账号密码" autocomplete="new-password" />
-        </div>
-        <div class="form-group">
-          <label>TOTP 密钥（Base32）</label>
-          <input type="text" id="totpSecret" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
-          <div class="hint">两步验证的密钥，非 6 位动态码。提交后密码和密钥将自动清空。</div>
-        </div>
-      </div>
-
-      <!-- 第二段：目标邮箱 -->
-      <div class="card" id="cardTarget">
-        <h2><span class="step-num">2</span> 目标邮箱</h2>
-        <div class="form-group">
-          <label>新邮箱（选择 freemail 中已有的邮箱）</label>
-          <select id="newEmailSelect">
-            <option value="">加载邮箱列表中...</option>
-          </select>
-          <div class="hint">管理员可选择全部邮箱，普通用户仅可选择自己的邮箱。</div>
-        </div>
-        <div class="form-group" id="recvGroup" style="display:none">
-          <label>新邮箱收信地址（自动生成，只读）</label>
-          <div class="recv-box">
-            <div class="recv-label">换绑验证码将发送至此邮箱，由 freemail 自动接收：</div>
-            <div class="recv-url" id="recvUrl"></div>
-          </div>
-        </div>
-        <div class="form-group" id="manualNewEmailGroup" style="display:none">
-          <label>或手动输入新邮箱地址</label>
-          <input type="email" id="newEmailManual" placeholder="new@yourdomain.com" autocomplete="off" />
-        </div>
-        <div class="action-row">
-          <button class="btn btn-primary" id="submitBtn" onclick="startRebind()">开始换绑</button>
-        </div>
-      </div>
-
-      <!-- 第三段：任务状态 -->
-      <div class="card" id="cardStatus" style="display:none">
-        <h2><span class="step-num">3</span> 任务状态</h2>
-        <div class="steps" id="stepsIndicator">
-          <div class="step" data-step="created">
-            <div class="step-dot"><span>1</span></div>
-            <div class="step-label">已创建</div>
-          </div>
-          <div class="step" data-step="running">
-            <div class="step-dot"><span>2</span></div>
-            <div class="step-label">登录中</div>
-          </div>
-          <div class="step" data-step="waiting_code">
-            <div class="step-dot"><span>3</span></div>
-            <div class="step-label">等待验证码</div>
-          </div>
-          <div class="step" data-step="success">
-            <div class="step-dot"><span>4</span></div>
-            <div class="step-label">完成</div>
-          </div>
-        </div>
-        <div class="status-row">
-          <span>当前状态：</span>
-          <span id="statusBadge" class="badge badge-created">created</span>
-          <span id="taskIdLabel" style="font-size:12px;color:#999;margin-left:auto"></span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <div class="log-area" id="logArea">等待提交...</div>
-        <div id="resultArea"></div>
-        <div class="action-row" id="actionRow" style="display:none">
-          <button class="btn btn-danger" id="cancelBtn" onclick="cancelTask()">取消任务</button>
-        </div>
-      </div>
+    <div class="nav-actions">
+      <a href="/" class="btn btn-ghost" style="text-decoration:none"><span>返回邮箱</span></a>
+      <button id="logout" class="btn btn-secondary">退出登录</button>
     </div>
   </div>
 
-<script>
-let pollTimer = null;
-let currentTaskId = null;
-let currentSession = null;
-let mailboxList = [];
-const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled', 'expired']);
+  <div class="rebind-container">
+    <div id="disabled-banner" class="rebind-section" style="display:none">
+      <div class="disabled-banner">⚠️ 换绑服务未配置或未启用，请联系管理员</div>
+    </div>
 
-const STEP_ORDER = ['created', 'running', 'waiting_code', 'success'];
-const STEP_PROGRESS = { created: 10, running: 40, waiting_code: 70, success: 100, failed: 100, cancelled: 100, expired: 100 };
+    <!-- 第一段：账号信息 -->
+    <div class="rebind-section" id="section-account">
+      <div class="rebind-section-title"><span class="step-num">1</span>账号信息</div>
+      <div class="form-group">
+        <label class="form-label">旧邮箱（当前 ChatGPT 绑定邮箱）</label>
+        <input id="old-email" class="form-input" type="email" placeholder="user@example.com" autocomplete="off" />
+        <div id="old-inbox-display" class="inbox-display" style="display:none"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input id="password" class="form-input" type="password" placeholder="ChatGPT 账号密码" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">TOTP 密钥（Base32，如已开启两步验证）</label>
+        <input id="totp" class="form-input" type="text" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
+      </div>
+    </div>
 
-async function checkAuth() {
-  try {
-    const r = await fetch('/api/session', { credentials: 'include' });
-    if (!r.ok) {
-      const redirect = encodeURIComponent('/html/rebind.html' + window.location.search);
-      window.location.replace('/html/login.html?redirect=' + redirect);
-      return false;
-    }
-    currentSession = await r.json();
-    if (currentSession.role === 'guest' || currentSession.role === 'mailbox') {
-      document.getElementById('mainContent').style.display = 'none';
-      document.getElementById('notEnabled').style.display = 'block';
-      document.getElementById('notEnabledReason').textContent = '当前身份无权使用换绑功能。';
-      return false;
-    }
-    return true;
-  } catch (_) { window.location.replace('/html/login.html'); return false; }
-}
+    <!-- 第二段：目标邮箱 -->
+    <div class="rebind-section" id="section-target">
+      <div class="rebind-section-title"><span class="step-num">2</span>目标邮箱</div>
+      <div class="form-group">
+        <label class="form-label">新邮箱</label>
+        <select id="new-email" class="form-select">
+          <option value="">加载中…</option>
+        </select>
+        <div class="info-note">从您有权限的邮箱中选择。支持 freemail 托管邮箱和外部接码邮箱。</div>
+        <div id="new-inbox-display" class="inbox-display" style="display:none"></div>
+      </div>
+    </div>
 
-async function checkEnabled() {
-  try {
-    const r = await fetch('/api/rebind/config', { credentials: 'include' });
-    if (r.ok) {
-      const d = await r.json();
-      if (!d.enabled) {
-        document.getElementById('mainContent').style.display = 'none';
-        document.getElementById('notEnabled').style.display = 'block';
-        if (d.reason) document.getElementById('notEnabledReason').textContent = d.reason;
-        return false;
-      }
-    }
-  } catch (_) {}
-  return true;
-}
+    <!-- 第三段：任务状态 -->
+    <div class="rebind-section" id="section-status" style="display:none">
+      <div class="rebind-section-title"><span class="step-num">3</span>任务状态</div>
+      <div class="status-indicator">
+        <span id="status-dot" class="status-dot"></span>
+        <span id="status-text" style="font-size:14px;font-weight:500">等待中</span>
+      </div>
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <div id="error-box" class="error-box"></div>
+      <div class="btn-row">
+        <button id="btn-cancel" class="btn-danger" style="display:none">取消任务</button>
+      </div>
+    </div>
 
-async function loadMailboxes() {
-  const select = document.getElementById('newEmailSelect');
-  try {
-    const r = await fetch('/api/mailboxes?limit=500', { credentials: 'include' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    mailboxList = (d.list || []).filter(m => m.address);
-    if (!mailboxList.length) {
-      select.innerHTML = '<option value="">暂无可用邮箱，请先创建邮箱</option>';
-      select.disabled = true;
-      return;
-    }
-    select.innerHTML = '<option value="">请选择新邮箱...</option>' +
-      mailboxList.map(m => `<option value="${escapeHtml(m.address)}">${escapeHtml(m.address)}</option>`).join('');
-    document.getElementById('mailboxOptions').innerHTML = mailboxList
-      .map(m => `<option value="${escapeHtml(m.address)}"></option>`).join('');
+    <div class="btn-row" id="submit-row">
+      <button id="btn-submit" class="btn-primary">开始换绑</button>
+    </div>
+  </div>
 
-    // 从 URL 参数自动选中
-    const params = new URLSearchParams(window.location.search);
-    const presetOldEmail = (params.get('old_email') || '').trim();
-    if (presetOldEmail) {
-      document.getElementById('oldEmail').value = presetOldEmail;
-      onOldEmailInput();
-    }
-    const presetEmail = (params.get('new_email') || '').trim().toLowerCase();
-    if (presetEmail) {
-      const match = mailboxList.find(m => m.address.toLowerCase() === presetEmail);
-      if (match) {
-        select.value = match.address;
-        onMailboxChange();
-        // 非管理员：锁定选择（只能使用从邮箱列表带入的邮箱）
-        if (currentSession && !currentSession.strictAdmin) {
-          select.disabled = true;
-          select.style.backgroundColor = '#f5f7fa';
-          select.style.cursor = 'not-allowed';
+  <div id="footer-slot"></div>
+  <script src="/js/toast-utils.js"></script>
+  <script type="module">
+    import { apiFetch } from '/js/api.js';
+
+    const oldEmailInput = document.getElementById('old-email');
+    const newEmailSelect = document.getElementById('new-email');
+    const passwordInput = document.getElementById('password');
+    const totpInput = document.getElementById('totp');
+    const btnSubmit = document.getElementById('btn-submit');
+    const btnCancel = document.getElementById('btn-cancel');
+    const sectionStatus = document.getElementById('section-status');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const progressFill = document.getElementById('progress-fill');
+    const errorBox = document.getElementById('error-box');
+    const oldInboxDisplay = document.getElementById('old-inbox-display');
+    const newInboxDisplay = document.getElementById('new-inbox-display');
+    const disabledBanner = document.getElementById('disabled-banner');
+    const sectionAccount = document.getElementById('section-account');
+    const sectionTarget = document.getElementById('section-target');
+    const submitRow = document.getElementById('submit-row');
+
+    let currentTaskId = null;
+    let pollTimer = null;
+    let serviceEnabled = false;
+
+    // 从 URL 参数读取 new_email
+    const urlParams = new URLSearchParams(window.location.search);
+    const prefillNewEmail = urlParams.get('new_email');
+
+    // 检查服务配置
+    async function checkConfig() {
+      try {
+        const data = await apiFetch('/api/rebind/config');
+        serviceEnabled = data.enabled;
+        if (!serviceEnabled) {
+          disabledBanner.style.display = '';
+          sectionAccount.classList.add('disabled-overlay');
+          sectionTarget.classList.add('disabled-overlay');
+          submitRow.style.display = 'none';
         }
-      } else if (currentSession && !currentSession.strictAdmin) {
-        // 普通用户带入了无权访问的邮箱
-        select.innerHTML = '<option value="">该邮箱不在您的可用列表中</option>';
-        select.disabled = true;
+      } catch (_) {
+        serviceEnabled = false;
+        disabledBanner.style.display = '';
+        submitRow.style.display = 'none';
       }
     }
-  } catch (e) {
-    select.innerHTML = '<option value="">邮箱列表加载失败</option>';
-  }
-}
 
-function onMailboxChange() {
-  const select = document.getElementById('newEmailSelect');
-  const addr = select.value;
-  const recvGroup = document.getElementById('recvGroup');
-  if (addr) {
-    recvGroup.style.display = 'block';
-    document.getElementById('recvUrl').textContent = window.location.origin + '/rebind/new-inbox';
-  } else {
-    recvGroup.style.display = 'none';
-  }
-}
-
-function onOldEmailInput() {
-  const value = document.getElementById('oldEmail').value.trim();
-  const group = document.getElementById('oldRecvGroup');
-  group.style.display = value ? 'block' : 'none';
-  if (value) {
-    document.getElementById('oldRecvUrl').textContent = window.location.origin + '/rebind/old-inbox';
-  }
-}
-
-function log(msg) {
-  const area = document.getElementById('logArea');
-  const t = new Date().toLocaleTimeString();
-  area.textContent += `[${t}] ${msg}\n`;
-  area.scrollTop = area.scrollHeight;
-}
-
-function setStatus(status) {
-  const badge = document.getElementById('statusBadge');
-  badge.className = 'badge badge-' + status;
-  badge.textContent = status;
-
-  // 更新步骤指示器
-  const steps = document.querySelectorAll('#stepsIndicator .step');
-  const currentIdx = STEP_ORDER.indexOf(status);
-  steps.forEach((el, i) => {
-    el.classList.remove('active', 'done');
-    if (status === 'failed' || status === 'cancelled' || status === 'expired') {
-      if (i < STEP_ORDER.indexOf('running')) el.classList.add('done');
-    } else if (currentIdx >= 0) {
-      if (i < currentIdx) el.classList.add('done');
-      else if (i === currentIdx) el.classList.add('active');
-    }
-  });
-
-  // 更新进度条
-  const fill = document.getElementById('progressFill');
-  fill.style.width = (STEP_PROGRESS[status] || 0) + '%';
-  if (status === 'failed' || status === 'cancelled' || status === 'expired') {
-    fill.style.background = '#f56c6c';
-  } else if (status === 'success') {
-    fill.style.background = '#67c23a';
-  } else {
-    fill.style.background = '#4f6ef7';
-  }
-}
-
-function showCancelButton(show) {
-  document.getElementById('actionRow').style.display = show ? 'block' : 'none';
-}
-
-async function startRebind() {
-  const oldEmail = document.getElementById('oldEmail').value.trim();
-  const password = document.getElementById('password').value;
-  const totpSecret = document.getElementById('totpSecret').value.trim();
-  const newEmail = (document.getElementById('newEmailSelect').value || document.getElementById('newEmailManual').value || '').trim().toLowerCase();
-
-  if (!oldEmail || !password || !totpSecret || !newEmail) {
-    alert('请填写所有必填字段'); return;
-  }
-
-  const btn = document.getElementById('submitBtn');
-  btn.disabled = true; btn.textContent = '提交中...';
-
-  document.getElementById('cardStatus').style.display = 'block';
-  document.getElementById('logArea').textContent = '';
-  document.getElementById('resultArea').innerHTML = '';
-  setStatus('created');
-  showCancelButton(false);
-  log('正在提交换绑任务...');
-
-  try {
-    const r = await fetch('/api/rebind/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ old_email: oldEmail, password, totp_secret: totpSecret, new_email: newEmail })
-    });
-    const d = await r.json();
-    if (!r.ok || !d.success) {
-      throw new Error(d.error || '提交失败');
-    }
-    currentTaskId = d.task_id;
-    document.getElementById('taskIdLabel').textContent = 'task: ' + currentTaskId.slice(0, 12) + '...';
-    log('任务已提交，开始轮询状态...');
-    showCancelButton(true);
-
-    // 提交成功后立即清空敏感字段
-    document.getElementById('password').value = '';
-    document.getElementById('totpSecret').value = '';
-
-    pollStatus(currentTaskId);
-  } catch (e) {
-    log('错误：' + e.message);
-    setStatus('failed');
-    btn.disabled = false; btn.textContent = '开始换绑';
-    // 失败也清空敏感字段
-    document.getElementById('password').value = '';
-    document.getElementById('totpSecret').value = '';
-  }
-}
-
-async function cancelTask() {
-  if (!currentTaskId) return;
-  const btn = document.getElementById('cancelBtn');
-  btn.disabled = true; btn.textContent = '取消中...';
-  log('正在取消任务...');
-  try {
-    const r = await fetch('/api/rebind/cancel/' + currentTaskId, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || '取消失败');
-    log('任务已取消');
-    setStatus(d.status || 'cancelled');
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    showCancelButton(false);
-    document.getElementById('submitBtn').disabled = false;
-    document.getElementById('submitBtn').textContent = '开始换绑';
-  } catch (e) {
-    log('取消失败：' + e.message);
-    btn.disabled = false; btn.textContent = '取消任务';
-  }
-}
-
-async function pollStatus(taskId) {
-  if (pollTimer) clearInterval(pollTimer);
-  let attempts = 0;
-  const maxAttempts = 150;
-
-  pollTimer = setInterval(async () => {
-    attempts++;
-    if (attempts > maxAttempts) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      log('轮询超时，请稍后手动刷新页面查看');
-      showCancelButton(false);
-      document.getElementById('submitBtn').disabled = false;
-      document.getElementById('submitBtn').textContent = '开始换绑';
-      return;
-    }
-    try {
-      const r = await fetch('/api/rebind/status/' + taskId, { credentials: 'include' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || d.detail || ('HTTP ' + r.status));
-
-      setStatus(d.status || 'unknown');
-
-      if (d.status === 'running') {
-        log('换绑进行中：正在登录旧邮箱...');
-      } else if (d.status === 'waiting_code') {
-        log('正在等待对应邮箱验证码，freemail 会按当前登录步骤读取旧邮箱或新邮箱...');
-      } else if (TERMINAL_STATUSES.has(d.status)) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-        showCancelButton(false);
-        if (d.status === 'success') {
-          log('换绑成功！');
-          showResult(d, true);
-        } else if (d.status === 'cancelled') {
-          log('任务已取消');
-        } else if (d.status === 'expired') {
-          log('任务超时过期');
-          showResult(d, false);
-        } else {
-          log('换绑失败：' + (d.error || d.message || '未知错误'));
-          showResult(d, false);
+    // 加载用户邮箱列表
+    async function loadMailboxes() {
+      try {
+        const data = await apiFetch('/api/mailboxes');
+        const mailboxes = data.mailboxes || data.items || [];
+        newEmailSelect.innerHTML = '';
+        if (mailboxes.length === 0) {
+          newEmailSelect.innerHTML = '<option value="">暂无可用邮箱</option>';
+          return;
         }
-        document.getElementById('submitBtn').disabled = false;
-        document.getElementById('submitBtn').textContent = '开始换绑';
+        for (const mb of mailboxes) {
+          const addr = mb.address || mb.email;
+          const opt = document.createElement('option');
+          opt.value = addr;
+          opt.textContent = addr;
+          newEmailSelect.appendChild(opt);
+        }
+        // 预填
+        if (prefillNewEmail) {
+          const exists = Array.from(newEmailSelect.options).some(o => o.value === prefillNewEmail);
+          if (exists) {
+            newEmailSelect.value = prefillNewEmail;
+          } else {
+            // 不在列表中，添加一个选项
+            const opt = document.createElement('option');
+            opt.value = prefillNewEmail;
+            opt.textContent = prefillNewEmail + '（外部邮箱）';
+            newEmailSelect.insertBefore(opt, newEmailSelect.firstChild);
+            newEmailSelect.value = prefillNewEmail;
+          }
+          updateInboxDisplay('new', prefillNewEmail);
+        }
+      } catch (e) {
+        newEmailSelect.innerHTML = '<option value="">加载失败</option>';
       }
-    } catch (e) {
-      log('查询状态出错：' + e.message);
     }
-  }, 2000);
-}
 
-function showResult(d, success) {
-  const area = document.getElementById('resultArea');
-  if (success) {
-    area.innerHTML = `
-      <div class="result-box">
-        <div class="row"><span>新邮箱：</span><span>${escapeHtml(d.session_email || d.new_email || '')}</span></div>
-        <div class="row"><span>Access Token：</span><span>${escapeHtml(d.access_token_masked || '')}</span></div>
-        <div class="row" style="font-size:11px;color:#999;margin-top:8px">
-          完整 session / access_token 已在任务结束后从服务端删除，出于安全考虑不在此页面显示。
-        </div>
-      </div>`;
-  } else {
-    area.innerHTML = `
-      <div class="result-box fail">
-        <div class="row"><span>错误码：</span><span>${escapeHtml(d.code || '')}</span></div>
-        <div class="row"><span>错误信息：</span><span>${escapeHtml(d.message || d.error || '')}</span></div>
-      </div>`;
-  }
-}
+    // 更新接码地址显示
+    async function updateInboxDisplay(label, email) {
+      const displayEl = label === 'old' ? oldInboxDisplay : newInboxDisplay;
+      if (!email) { displayEl.style.display = 'none'; return; }
+      displayEl.style.display = '';
+      displayEl.textContent = '查询中…';
+      displayEl.className = 'inbox-display';
+      try {
+        const data = await apiFetch(`/api/rebind/inbox-config?email=${encodeURIComponent(email)}`);
+        const type = data.type || 'none';
+        displayEl.className = `inbox-display ${type}`;
+        let badge = '';
+        if (type === 'freemail') badge = '<span class="inbox-type-badge badge-freemail">freemail 托管</span>';
+        else if (type === 'external') badge = '<span class="inbox-type-badge badge-external">外部接码</span>';
+        else badge = '<span class="inbox-type-badge badge-none">未配置</span>';
+        displayEl.innerHTML = `接码方式：${badge} ${data.inbox_url || ''} ${data.description || ''}`;
+      } catch (_) {
+        displayEl.className = 'inbox-display none';
+        displayEl.textContent = '接码地址：查询失败';
+      }
+    }
 
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+    oldEmailInput.addEventListener('input', () => updateInboxDisplay('old', oldEmailInput.value.trim()));
+    newEmailSelect.addEventListener('change', () => updateInboxDisplay('new', newEmailSelect.value));
 
-// 初始化
-(async function init() {
-  const authed = await checkAuth();
-  if (!authed) return;
-  const enabled = await checkEnabled();
-  if (!enabled) return;
+    // 提交任务
+    btnSubmit.addEventListener('click', async () => {
+      if (!serviceEnabled) { if (window.showToast) window.showToast('换绑服务未启用', 'error'); return; }
+      const oldEmail = oldEmailInput.value.trim();
+      const newEmail = newEmailSelect.value;
+      const password = passwordInput.value;
+      const totp = totpInput.value.trim();
+      if (!oldEmail) { if (window.showToast) window.showToast('请输入旧邮箱', 'error'); return; }
+      if (!newEmail) { if (window.showToast) window.showToast('请选择新邮箱', 'error'); return; }
+      if (!password) { if (window.showToast) window.showToast('请输入密码', 'error'); return; }
 
-  document.getElementById('newEmailSelect').addEventListener('change', onMailboxChange);
-  document.getElementById('oldEmail').addEventListener('input', onOldEmailInput);
-  await loadMailboxes();
-})();
-</script>
+      btnSubmit.disabled = true;
+      btnSubmit.textContent = '提交中…';
+      errorBox.style.display = 'none';
+
+      try {
+        const data = await apiFetch('/api/rebind/start', {
+          method: 'POST',
+          body: JSON.stringify({ old_email: oldEmail, new_email: newEmail, password, totp_secret: totp })
+        });
+        currentTaskId = data.task_id;
+        // 清空敏感字段
+        passwordInput.value = '';
+        totpInput.value = '';
+        // 显示状态
+        sectionStatus.style.display = '';
+        submitRow.style.display = 'none';
+        btnCancel.style.display = '';
+        startPolling();
+      } catch (e) {
+        errorBox.textContent = '创建任务失败：' + e.message;
+        errorBox.style.display = '';
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = '开始换绑';
+      }
+    });
+
+    // 取消任务
+    btnCancel.addEventListener('click', async () => {
+      if (!currentTaskId) return;
+      if (!confirm('确认取消换绑任务？')) return;
+      try {
+        await apiFetch(`/api/rebind/task/${currentTaskId}/cancel`, { method: 'POST' });
+        if (window.showToast) window.showToast('已请求取消', 'success');
+      } catch (e) {
+        if (window.showToast) window.showToast('取消失败：' + e.message, 'error');
+      }
+    });
+
+    // 轮询任务状态
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(pollTask, 3000);
+      pollTask();
+    }
+
+    async function pollTask() {
+      if (!currentTaskId) return;
+      try {
+        const data = await apiFetch(`/api/rebind/task/${currentTaskId}`);
+        const status = data.status || 'unknown';
+        updateStatusUI(status, data);
+        if (['success', 'failed', 'cancelled', 'expired'].includes(status)) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          btnCancel.style.display = 'none';
+          submitRow.style.display = '';
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = '再次换绑';
+        }
+      } catch (_) {}
+    }
+
+    function updateStatusUI(status, data) {
+      statusDot.className = 'status-dot';
+      const statusMap = {
+        created: { text: '任务已创建', dot: '', progress: 10 },
+        running: { text: '登录中…', dot: 'active', progress: 30 },
+        waiting_code: { text: '等待验证码…', dot: 'active', progress: 60 },
+        success: { text: '换绑成功！', dot: 'success', progress: 100 },
+        failed: { text: '换绑失败', dot: 'error', progress: 100 },
+        cancelled: { text: '任务已取消', dot: 'error', progress: 100 },
+        expired: { text: '任务超时', dot: 'error', progress: 100 },
+      };
+      const info = statusMap[status] || { text: status, dot: '', progress: 20 };
+      statusText.textContent = info.text;
+      statusDot.classList.add(info.dot);
+      progressFill.style.width = info.progress + '%';
+      if (status === 'failed' && data.error) {
+        errorBox.textContent = '错误：' + data.error;
+        errorBox.style.display = '';
+      }
+      if (data.result && data.result.message) {
+        statusText.textContent += ' - ' + data.result.message;
+      }
+    }
+
+    document.getElementById('logout').onclick = async () => { try { await apiFetch('/api/session/logout', { method: 'POST' }); } catch(_) {} location.href = '/'; };
+
+    // footer
+    (async function(){ try { const res = await fetch('/templates/footer.html', { cache: 'no-cache' }); const html = await res.text(); const slot = document.getElementById('footer-slot'); if (slot) slot.outerHTML = html; } catch(_){} })();
+
+    // 初始化
+    checkConfig();
+    loadMailboxes();
+  </script>
 </body>
 </html>
