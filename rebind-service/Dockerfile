@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制服务代码
 COPY server.py .
+COPY patches/apply_dual_mailbox_otp.py /app/patches/apply_dual_mailbox_otp.py
+COPY patches/apply_initial_old_email_otp.py /app/patches/apply_initial_old_email_otp.py
 
 # 构建阶段从上游仓库克隆固定 commit 的核心代码
 # （不提交到 freemail 仓库，避免体积和许可证问题）
@@ -22,6 +24,8 @@ RUN git clone --depth 1 https://github.com/huzy00413-blip/chatgpt-rebind-standal
     && cd /tmp/core \
     && git fetch --depth 1 origin ${REBIND_CORE_COMMIT} \
     && git checkout ${REBIND_CORE_COMMIT} \
+    && python /app/patches/apply_dual_mailbox_otp.py /tmp/core \
+    && python /app/patches/apply_initial_old_email_otp.py /tmp/core \
     && cp -r rebind_core registration_core /app/ \
     && rm -rf /tmp/core \
     && echo "Core code at commit: ${REBIND_CORE_COMMIT}"

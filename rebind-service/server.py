@@ -15,6 +15,7 @@ ChatGPT 换绑邮箱 HTTP 服务（FastAPI）v2.0.0
   - 每个任务独立输出目录，结束后立即 shutil.rmtree 清理
   - 代理池由服务端配置，不接受前端任意代理
   - 任务可取消（通过 threading.Event + requests.get 中断点）
+  - 旧/新邮箱使用独立收信 API 与 token；按上游登录响应决定是否读取旧邮箱 OTP
   - 敏感字段严格脱敏，状态接口不返回密码/TOTP/cookie/代理凭据/bundle
   - 启动时清理 outputs 残留目录
 
@@ -294,7 +295,7 @@ _tasks_lock = threading.Lock()
 _rate_limit: dict[str, deque] = {}
 _rate_lock = threading.Lock()
 _cleanup_stop = threading.Event()
-# 每线程的收信 token 和取消事件（用于 requests.get monkey-patch）
+# 每线程的旧/新收信 token 和取消事件（用于 requests.get monkey-patch）
 _thread_local = threading.local()
 
 # 合法状态集合
@@ -649,7 +650,7 @@ def _startup_cleanup() -> None:
 
 # ---------------------------------------------------------------------------
 # 全局 requests.get monkey-patch：
-#   1. 从 thread-local 读取 inbox_token，对 /rebind/inbox 请求注入 header
+#   1. 从 thread-local 读取 old/new inbox token，对对应收信请求注入 header
 #   2. 检查取消事件，已取消则抛出异常中断收信轮询
 #   3. 收信请求时更新任务状态为 waiting_code
 # 多线程安全：每个任务线程有独立的 token 和 cancel_event。
@@ -669,8 +670,14 @@ def _patched_requests_get(url, **kwargs):
     if cancel_evt is not None and cancel_evt.is_set():
         raise TaskCancelledError("任务已被取消")
 
-    token = getattr(_thread_local, "inbox_token", None)
-    is_inbox = token and "/rebind/inbox" in str(url)
+    url_text = str(url)
+    if "/rebind/old-inbox" in url_text:
+        token = getattr(_thread_local, "old_inbox_token", None)
+    elif "/rebind/new-inbox" in url_text or "/rebind/inbox" in url_text:
+        token = getattr(_thread_local, "new_inbox_token", None)
+    else:
+        token = None
+    is_inbox = bool(token)
     if is_inbox:
         headers = dict(kwargs.get("headers") or {})
         headers["X-Rebind-Token"] = token
@@ -757,7 +764,8 @@ def _run_task(task_id: str, params: dict[str, Any]) -> None:
             raise RuntimeError("rebind_core 未正确导入，请检查 REBIND_CORE_DIR")
 
         # 设置线程本地变量
-        _thread_local.inbox_token = params.get("inbox_token", "")
+        _thread_local.old_inbox_token = params.get("old_inbox_token", "")
+        _thread_local.new_inbox_token = params.get("new_inbox_token", "")
         _thread_local.cancel_event = cancel_evt
         _thread_local.task_id = task_id
 
@@ -767,14 +775,15 @@ def _run_task(task_id: str, params: dict[str, Any]) -> None:
                 password=params["password"],
                 totp_secret=params["totp_secret"],
                 new_email=params["new_email"],
-                mail_api=params["mail_api"],
+                old_mail_api=params["old_mail_api"],
+                new_mail_api=params["new_mail_api"],
                 proxy=proxy,
                 out_dir=str(task_dir),
                 mail_timeout=float(params.get("mail_timeout") or DEFAULT_MAIL_TIMEOUT),
             )
         finally:
             # 清除线程本地变量
-            for attr in ("inbox_token", "cancel_event", "task_id"):
+            for attr in ("old_inbox_token", "new_inbox_token", "cancel_event", "task_id"):
                 if hasattr(_thread_local, attr):
                     delattr(_thread_local, attr)
 
@@ -917,8 +926,10 @@ class RebindRequest(BaseModel):
     password: str = Field(..., description="账号密码")
     totp_secret: str = Field(..., description="TOTP 密钥（Base32）")
     new_email: str = Field(..., description="新邮箱")
-    mail_api: str = Field(..., description="新邮箱收信 API URL（不含 token）")
-    inbox_token: str = Field(..., description="收信端点鉴权 token，通过 X-Rebind-Token header 传递")
+    old_mail_api: str = Field(..., description="旧邮箱验证码收信 API URL（不含 token）")
+    old_inbox_token: str = Field(..., description="旧邮箱收信 token，通过 X-Rebind-Token header 传递")
+    new_mail_api: str = Field(..., description="新邮箱验证码收信 API URL（不含 token）")
+    new_inbox_token: str = Field(..., description="新邮箱收信 token，通过 X-Rebind-Token header 传递")
     mail_timeout: float | None = Field(default=None, description="收信超时秒数（上限300）")
     # 注意：proxy 字段已移除，代理由服务端代理池统一选择
 

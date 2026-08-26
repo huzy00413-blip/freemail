@@ -7,7 +7,7 @@
  * 安全设计：
  *   - 仅严格管理员或拥有目标邮箱的用户可发起换绑
  *   - task_id 绑定用户身份，状态查询/取消均校验归属
- *   - 收信使用短期 token（绑定 user+mailbox+task、记录邮件基线、任务结束撤销），仅通过 header 传输
+ *   - 收信使用两枚短期 token（分别绑定旧/新邮箱、user+mailbox+task、记录邮件基线、任务结束撤销），仅通过 header 传输
  *   - 返回结果严格过滤，不泄露密码、TOTP、cookie、代理凭据、bundle、traceback
  *   - 强制 Python 服务地址为 HTTPS（localhost 开发环境除外）
  *   - D1 写入失败时调用 Python 取消接口，不产生孤儿任务
@@ -97,6 +97,23 @@ async function checkRebindPermission(db, request, options, newEmail) {
     return { allowed: false, reason: '无权操作该邮箱' };
   }
   return { allowed: true, mailboxId: access.mailbox?.id };
+}
+
+/**
+ * 读取邮箱基线，用于过滤任务创建前已经存在的验证码邮件。
+ */
+async function getMailboxBaseline(db, mailboxId) {
+  try {
+    const latest = await db.prepare(`
+      SELECT id, received_at FROM messages
+      WHERE mailbox_id = ? ORDER BY received_at DESC LIMIT 1
+    `).bind(mailboxId).first();
+    return latest
+      ? { messageId: latest.id, receivedAt: latest.received_at }
+      : { messageId: null, receivedAt: null };
+  } catch (_) {
+    return { messageId: null, receivedAt: null };
+  }
 }
 
 /**
@@ -196,7 +213,7 @@ async function checkRebindTablesReady(db) {
     const tokensOk = await requireColumns(db, 'rebind_inbox_tokens', [
       'token', 'user_id', 'mailbox_id', 'task_id', 'expires_at',
       'used_count', 'max_uses', 'baseline_message_id',
-      'baseline_received_at', 'revoked',
+      'baseline_received_at', 'mailbox_type', 'revoked',
     ]);
 
     return tasksOk && tokensOk
@@ -291,9 +308,14 @@ export async function handleRebindApi(request, db, url, path, options = {}) {
     if (!oldEmail || !password || !totpSecret || !newEmail) {
       return errorResponse('缺少必填字段：old_email / password / totp_secret / new_email', 400);
     }
-    if (!newEmail.includes('@')) {
-      return errorResponse('新邮箱格式非法', 400);
+    if (!oldEmail.includes('@') || !newEmail.includes('@')) {
+      return errorResponse('旧邮箱或新邮箱格式非法', 400);
     }
+    if (oldEmail.toLowerCase() === newEmail) {
+      return errorResponse('旧邮箱和新邮箱不能相同', 400);
+    }
+
+    const ctx = getAuthContext(request, options);
 
     // 权限校验
     const perm = await checkRebindPermission(db, request, options, newEmail);
@@ -301,13 +323,25 @@ export async function handleRebindApi(request, db, url, path, options = {}) {
       return errorResponse(perm.reason || '无权操作', 403);
     }
 
-    // 确认邮箱存在并获取 mailbox_id
+    // 旧邮箱也必须是 freemail 中的邮箱，因为旧邮箱验证码由本系统收取。
+    // 非管理员同时校验旧邮箱归属，避免借用其他用户的收信入口。
+    const oldMailboxId = await getMailboxIdByAddress(db, oldEmail);
+    if (!oldMailboxId) {
+      return errorResponse(`旧邮箱 ${oldEmail} 不存在，无法提供旧邮箱验证码收信地址`, 400);
+    }
+    if (!ctx.strictAdmin) {
+      const oldAccess = await getMailboxAccess(db, request, options, { mailboxId: oldMailboxId });
+      if (!oldAccess.allowed) {
+        return errorResponse('无权读取旧邮箱验证码，请使用自己拥有的旧邮箱', 403);
+      }
+    }
+
+    // 确认新邮箱存在并获取 mailbox_id
     const mailboxId = perm.mailboxId || await getMailboxIdByAddress(db, newEmail);
     if (!mailboxId) {
       return errorResponse(`新邮箱 ${newEmail} 不存在`, 400);
     }
 
-    const ctx = getAuthContext(request, options);
     // 与 D1 的 COALESCE(user_id, -1) 作用域保持一致。0 不是有效用户 ID，
     // 不能一处写成 NULL、另一处按 0 查询。
     const ownerUserId = Number.isInteger(ctx.userId) && ctx.userId > 0 ? ctx.userId : null;
@@ -332,33 +366,31 @@ export async function handleRebindApi(request, db, url, path, options = {}) {
       });
     }
 
-    // 查询邮件基线：当前最新邮件 ID，避免读取换绑前的旧验证码
-    let baselineMessageId = null;
-    let baselineReceivedAt = null;
-    try {
-      const latest = await db.prepare(`
-        SELECT id, received_at FROM messages
-        WHERE mailbox_id = ? ORDER BY received_at DESC LIMIT 1
-      `).bind(mailboxId).first();
-      if (latest) {
-        baselineMessageId = latest.id;
-        baselineReceivedAt = latest.received_at;
-      }
-    } catch (_) { /* 基线查询失败不影响流程 */ }
+    const oldBaseline = await getMailboxBaseline(db, oldMailboxId);
+    const newBaseline = await getMailboxBaseline(db, mailboxId);
 
     // 预先生成 task_id（必须在写 D1 之前，确保 Python 回调时 token 和任务记录已存在）
     const taskId = crypto.randomUUID();
 
-    // 生成短期收信 token（直接绑定 task_id，避免创建阶段竞态）
-    const inboxToken = generateToken();
+    // 为旧/新邮箱分别生成短期收信 token，直接绑定 task_id，避免创建阶段竞态。
+    const oldInboxToken = generateToken();
+    const newInboxToken = generateToken();
     const expiresAt = new Date(Date.now() + INBOX_TOKEN_TTL_MS).toISOString();
 
-    // 第一步：写入 token（含 task_id）
+    // 第一步：一次写入两枚 token；任一步失败都不启动 Python。
     try {
-      await db.prepare(`
-        INSERT INTO rebind_inbox_tokens (token, user_id, mailbox_id, task_id, expires_at, baseline_message_id, baseline_received_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).bind(inboxToken, ownerUserId, mailboxId, taskId, expiresAt, baselineMessageId, baselineReceivedAt).run();
+      await db.batch([
+        db.prepare(`
+          INSERT INTO rebind_inbox_tokens
+            (token, user_id, mailbox_id, task_id, expires_at, baseline_message_id, baseline_received_at, mailbox_type)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(oldInboxToken, ownerUserId, oldMailboxId, taskId, expiresAt, oldBaseline.messageId, oldBaseline.receivedAt, 'old'),
+        db.prepare(`
+          INSERT INTO rebind_inbox_tokens
+            (token, user_id, mailbox_id, task_id, expires_at, baseline_message_id, baseline_received_at, mailbox_type)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(newInboxToken, ownerUserId, mailboxId, taskId, expiresAt, newBaseline.messageId, newBaseline.receivedAt, 'new'),
+      ]);
     } catch (e) {
       return errorResponse('创建收信令牌失败：' + e.message, 500);
     }
@@ -385,8 +417,9 @@ export async function handleRebindApi(request, db, url, path, options = {}) {
       return errorResponse('保存任务记录失败：' + e.message, 500);
     }
 
-    // 收信 API 地址（不带 token，Python 服务通过 X-Rebind-Token header 传递）
-    const mailApi = `${workerOrigin}/rebind/inbox`;
+    // 两个收信 API 地址均不带 token；Python 通过 X-Rebind-Token header 传递。
+    const oldMailApi = `${workerOrigin}/rebind/old-inbox`;
+    const newMailApi = `${workerOrigin}/rebind/new-inbox`;
 
     const payload = {
       task_id: taskId,
@@ -394,8 +427,10 @@ export async function handleRebindApi(request, db, url, path, options = {}) {
       password,
       totp_secret: totpSecret,
       new_email: newEmail,
-      mail_api: mailApi,
-      inbox_token: inboxToken,
+      old_mail_api: oldMailApi,
+      old_inbox_token: oldInboxToken,
+      new_mail_api: newMailApi,
+      new_inbox_token: newInboxToken,
       mail_timeout: Math.min(mailTimeout, 300),
       // 不发送 proxy：由 Python 服务端代理池统一选择
     };

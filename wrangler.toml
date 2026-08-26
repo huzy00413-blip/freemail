@@ -14,10 +14,6 @@ database_id = "66317a51-8e94-47f7-b92c-fd70cf170807" # 你的database_id
 [vars]
 # FORWARD_RULES="[{"prefix":"vip","email":"a@example.com"},{"prefix":"*","email":"example@qq.com"}]"
 ADMIN_NAME="admin"
-ADMIN_PASSWORD="Admin@2026"
-# JWT_TOKEN 和 GUEST_PASSWORD 因 keep_vars 历史绑定无法设为 secret，直接作为 vars 配置
-JWT_TOKEN="b78b87c1a1c530784f0c44928b9c62d92b8bd977a41e4866064175648928a261"
-GUEST_PASSWORD="df1efd636e689636e491a3d04990de9d"
 SESSION_EXPIRE_DAYS="365"
 MAIL_DOMAIN="xiaobaikuzi.online"
 WORKER_ORIGIN="https://mailfree.1842068403.workers.dev"
@@ -26,7 +22,10 @@ SENDFLARE_API_KEY="SENDFLARE发件密钥"
 CYBERPERSONS_API_KEY="CYBERPERSONS发件密钥"
 
 # ChatGPT 换绑邮箱功能（调用独立部署的 Python 服务）
-# 以下变量包含敏感信息，请勿在此硬编码，使用 wrangler secret put 设置：
+# 以下变量包含敏感信息，只能使用 wrangler secret put 设置：
+#   ADMIN_PASSWORD       管理员登录密码
+#   JWT_TOKEN            JWT 签名密钥
+#   GUEST_PASSWORD       访客登录密码
 #   REBIND_SERVICE_URL      Python 换绑服务的公网 HTTPS 地址
 #   REBIND_SERVICE_TOKEN    与 Python 服务的 REBIND_SERVICE_TOKEN 一致
 #   REBIND_CALLBACK_TOKEN   Python 终态回调鉴权 token（与 Python 端一致）

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (
   max_uses INTEGER DEFAULT 200,
   baseline_message_id INTEGER,
   baseline_received_at TEXT,
+  mailbox_type TEXT NOT NULL DEFAULT 'new',
   revoked INTEGER DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE
@@ -57,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_expires ON rebind_inbox_token
 -- ALTER TABLE rebind_inbox_tokens ADD COLUMN max_uses INTEGER DEFAULT 200;
 -- ALTER TABLE rebind_inbox_tokens ADD COLUMN baseline_message_id INTEGER;
 -- ALTER TABLE rebind_inbox_tokens ADD COLUMN baseline_received_at TEXT;
+-- ALTER TABLE rebind_inbox_tokens ADD COLUMN mailbox_type TEXT NOT NULL DEFAULT 'new';
 -- ALTER TABLE rebind_inbox_tokens ADD COLUMN revoked INTEGER DEFAULT 0;
 -- ALTER TABLE rebind_tasks ADD COLUMN idempotency_key TEXT;
 -- CREATE UNIQUE INDEX IF NOT EXISTS idx_rebind_tasks_active_idempotency
@@ -67,5 +69,5 @@ CREATE INDEX IF NOT EXISTS idx_rebind_inbox_tokens_expires ON rebind_inbox_token
 -- 4. 验证（执行后确认字段完整）
 --    PRAGMA table_info(rebind_inbox_tokens);
 --    应包含：token, user_id, mailbox_id, task_id, expires_at, used_count,
---            max_uses, baseline_message_id, baseline_received_at, revoked
+--            max_uses, baseline_message_id, baseline_received_at, mailbox_type, revoked
 -- ============================================================================

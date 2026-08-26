@@ -100,11 +100,15 @@ docker run -d \
   "password": "your-password",
   "totp_secret": "BASE32SECRET",
   "new_email": "new@example.com",
-  "mail_api": "https://freemail.example.com/rebind/inbox?token=xxx",
-  "proxy": "",
+  "old_mail_api": "https://freemail.example.com/rebind/old-inbox",
+  "old_inbox_token": "issued-by-worker",
+  "new_mail_api": "https://freemail.example.com/rebind/new-inbox",
+  "new_inbox_token": "issued-by-worker",
   "mail_timeout": 180
 }
 ```
+
+旧邮箱登录响应明确进入 `email_otp_verification` 时，服务从 `old_mail_api` 收取旧邮箱验证码；换绑 `begin` 后从 `new_mail_api` 收取新邮箱验证码。两个 token 都只通过 `X-Rebind-Token` header 使用，任务终态会一起撤销。
 
 **响应：**
 

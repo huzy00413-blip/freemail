@@ -2,10 +2,15 @@
  * 换绑功能的公开路由（无需 JWT 登录）v2.0.0
  *
  * 当前提供：
+ *   GET /rebind/old-inbox
+ *     —— 旧邮箱登录验证码收信。
+ *   GET /rebind/new-inbox
+ *     —— 新邮箱换绑验证码收信。
  *   GET /rebind/inbox
+ *     —— 兼容旧版本，等同于 new-inbox。
  *     Header: X-Rebind-Token: <短期 token>
- *     —— 供 Python 换绑服务轮询新邮箱的验证码。
- *        token 由 /api/rebind/start 签发，绑定到 user+mailbox+task，
+ *     —— 供 Python 换绑服务轮询验证码。
+ *        token 由 /api/rebind/start 签发，分别绑定 old/new mailbox + user+task，
  *        记录邮件基线，任务结束后立即撤销（revoke），过期自动失效。
  *
  * 安全设计：
@@ -68,7 +73,7 @@ async function cleanupExpiredTokens(db) {
   } catch (_) { /* 忽略清理错误 */ }
 }
 
-router.get('/rebind/inbox', async (c) => {
+async function handleInbox(c, expectedMailboxType) {
   // 仅从 header 读取 token（删除 URL 参数兼容，防止 token 进入日志/历史记录）
   const token = String(
     c.req.header('X-Rebind-Token') ||
@@ -109,8 +114,9 @@ router.get('/rebind/inbox', async (c) => {
       WHERE token = ?
         AND revoked = 0
         AND expires_at > ?
+        AND mailbox_type = ?
         AND used_count < max_uses
-    `).bind(token, now).run();
+    `).bind(token, now, expectedMailboxType).run();
 
     const changed = updateResult.meta?.changes ?? updateResult.meta?.rows_written ?? 0;
     if (changed !== 1) {
@@ -119,13 +125,13 @@ router.get('/rebind/inbox', async (c) => {
 
     // 查询 token 关联的邮箱和基线信息
     const tokenRow = await db.prepare(`
-      SELECT id, mailbox_id, task_id, baseline_message_id, baseline_received_at
+      SELECT id, mailbox_id, task_id, mailbox_type, baseline_message_id, baseline_received_at
       FROM rebind_inbox_tokens
       WHERE token = ?
       LIMIT 1
     `).bind(token).first();
 
-    if (!tokenRow) {
+    if (!tokenRow || String(tokenRow.mailbox_type || '') !== expectedMailboxType) {
       return c.json({ error: 'token 不存在' }, 403);
     }
 
@@ -172,7 +178,11 @@ router.get('/rebind/inbox', async (c) => {
     console.error('rebind inbox 查询失败:', e);
     return c.json({ error: '查询失败: ' + e.message }, 500);
   }
-});
+}
+
+router.get('/rebind/old-inbox', (c) => handleInbox(c, 'old'));
+router.get('/rebind/new-inbox', (c) => handleInbox(c, 'new'));
+router.get('/rebind/inbox', (c) => handleInbox(c, 'new'));
 
 /**
  * Python 服务终态回调：任务结束后主动通知 Worker 撤销收信 token。

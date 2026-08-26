@@ -67,7 +67,7 @@ async function performFirstTimeSetup(db) {
   await db.exec("CREATE TABLE IF NOT EXISTS rebind_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL UNIQUE, user_id INTEGER, username TEXT, old_email TEXT, new_email TEXT, status TEXT DEFAULT 'created', idempotency_key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);");
 
   // 换绑收信一次性 token（短期、绑定 user+mailbox+task）
-  await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
+  await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, mailbox_type TEXT NOT NULL DEFAULT 'new', revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
   
   // 创建索引
   await createIndexes(db);
@@ -159,7 +159,7 @@ async function migrateSentEmailsFields(db) {
 async function ensureRebindTables(db) {
   try {
     await db.exec("CREATE TABLE IF NOT EXISTS rebind_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL UNIQUE, user_id INTEGER, username TEXT, old_email TEXT, new_email TEXT, status TEXT DEFAULT 'created', idempotency_key TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);");
-    await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
+    await db.exec("CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, user_id INTEGER, mailbox_id INTEGER NOT NULL, task_id TEXT, expires_at TEXT NOT NULL, used_count INTEGER DEFAULT 0, max_uses INTEGER DEFAULT 200, baseline_message_id INTEGER, baseline_received_at TEXT, mailbox_type TEXT NOT NULL DEFAULT 'new', revoked INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE);");
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_task_id ON rebind_tasks(task_id);`);
     await db.exec(`CREATE INDEX IF NOT EXISTS idx_rebind_tasks_user_id ON rebind_tasks(user_id);`);
     await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rebind_tasks_active_idempotency ON rebind_tasks(COALESCE(user_id, -1), idempotency_key) WHERE status IN ('created', 'running', 'waiting_code');`);

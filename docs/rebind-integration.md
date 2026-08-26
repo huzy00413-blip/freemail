@@ -12,7 +12,8 @@ freemail Worker (Cloudflare)
     ├── /api/rebind/status/:id         查询状态（归属校验+脱敏）
     ├── /api/rebind/cancel/:id         取消任务（归属校验）
     ├── /api/rebind/config             可用性检测（字段级 schema 校验）
-    ├── /rebind/inbox                  收信端点（header token + 原子次数）
+    ├── /rebind/old-inbox              旧邮箱验证码收信端点
+    ├── /rebind/new-inbox              新邮箱验证码收信端点
     └── /rebind/task-terminal          Python 终态回调（撤销 token，Bearer 鉴权）
     │ HTTPS + Bearer Token
     ▼
@@ -97,9 +98,11 @@ Python 换绑服务 (Render Docker, FastAPI v2.3.0)
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `JWT_TOKEN` | ✅ | JWT签名密钥+root admin token，必须强随机且轮换 |
+| `ADMIN_PASSWORD` | ✅ | 管理员登录密码，必须强随机且轮换 |
 | `REBIND_SERVICE_URL` | ✅ | Render 服务 HTTPS 地址 |
 | `REBIND_SERVICE_TOKEN` | ✅ | 与 Render 端一致 |
 | `REBIND_CALLBACK_TOKEN` | ✅ | 与 Render 端一致 |
+| `PROXY_ENCRYPTION_KEY` | 使用代理池时必填 | D1 代理凭据 AES-GCM 加密密钥 |
 | `GUEST_PASSWORD` | ❌ | 访客密码；不设置则禁用访客登录 |
 
 > `GUEST_PASSWORD` 在 `src/routes/auth.js` 中使用。访客被换绑功能禁止。如不需要可不设置。
@@ -217,6 +220,7 @@ Invoke-RestMethod "https://freemail-rebind.onrender.com/health"
 $jwt = -join ([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32) | % { $_.ToString('x2') })
 Write-Output "JWT_TOKEN = $jwt"
 npx wrangler secret put JWT_TOKEN
+npx wrangler secret put ADMIN_PASSWORD
 
 npx wrangler secret put REBIND_SERVICE_TOKEN
 # 与 Render 完全一致
@@ -226,6 +230,9 @@ npx wrangler secret put REBIND_CALLBACK_TOKEN
 
 npx wrangler secret put REBIND_SERVICE_URL
 # https://freemail-rebind.onrender.com
+
+npx wrangler secret put PROXY_ENCRYPTION_KEY
+# 使用代理池时设置；不使用代理池也可暂不设置
 ```
 
 确认是否需要访客密码：
@@ -264,13 +271,19 @@ npx wrangler d1 execute mail_free_db --remote --file .\migrations\0001_rebind_ta
 
 > 迁移文件中的 ALTER TABLE 语句已注释。如 PRAGMA 显示缺少字段，先手动执行对应的 ALTER TABLE，再执行迁移文件（SQLite 不支持 ADD COLUMN IF NOT EXISTS）。
 
+如果 `PRAGMA table_info(rebind_inbox_tokens);` 显示缺少 `mailbox_type`，再单独执行：
+
+```powershell
+npx wrangler d1 execute mail_free_db --remote --file .\migrations\0005_rebind_dual_inbox.sql
+```
+
 **确认字段完整：**
 
 ```powershell
 npx wrangler d1 execute mail_free_db --remote --command "PRAGMA table_info(rebind_inbox_tokens);"
 ```
 
-`rebind_inbox_tokens` 应包含：`token, user_id, mailbox_id, task_id, expires_at, used_count, max_uses, baseline_message_id, baseline_received_at, revoked`。
+`rebind_inbox_tokens` 应包含：`token, user_id, mailbox_id, task_id, expires_at, used_count, max_uses, baseline_message_id, baseline_received_at, mailbox_type, revoked`。`mailbox_type` 为 `old` 或 `new`（历史旧 token 默认 `new`）。
 `rebind_tasks` 还必须包含：`task_id, user_id, status, updated_at, idempotency_key`，并存在 `idx_rebind_tasks_active_idempotency` 唯一索引。
 
 **二选一部署 Worker（不要同时执行）：**
@@ -319,7 +332,7 @@ npx wrangler deploy
 | schema 校验逻辑 | 代码审查：PRAGMA table_info 检查 11 个必需字段 | ✅ 通过 |
 | 敏感信息扫描 | `rg` 搜索代码中无明文密钥、代理密码 | ✅ 通过 |
 
-### 5.2 待 Render 测试环境验证（7项，上线前必须通过）
+### 5.2 待 Render 测试环境验证（8项，上线前必须通过）
 
 > 以下项目需要真实上游核心代码、Render 运行环境和 D1 数据库才能验证，目前尚未执行。
 
@@ -362,12 +375,18 @@ npx wrangler d1 execute mail_free_db --remote --command "SELECT revoked FROM reb
 
 #### 测试 6：收信请求带 X-Rebind-Token 且取消能中断
 
-**操作**：创建任务后，在 `waiting_code` 状态时取消，观察 Worker `/rebind/inbox` 日志和 Python 日志
+**操作**：创建任务后，在 `waiting_code` 状态时取消，观察 Worker `/rebind/old-inbox` 或 `/rebind/new-inbox` 日志和 Python 日志
 
 **预期**：
 - Worker 收信端点收到 `X-Rebind-Token` header（不在 URL 中）
 - 取消后 Python 日志显示 `[task <id>] 已取消`，收信轮询停止
 - monkey-patch 的 `requests.get` 在收信时注入 token 并检查 cancel_event
+
+#### 测试 8：旧邮箱验证码链路
+
+**操作**：使用一个会在登录响应返回 `email_otp_verification` 的账号执行换绑。
+
+**预期**：旧邮箱收到登录验证码并被 `/rebind/old-inbox` 读取；换绑开始后新邮箱验证码被 `/rebind/new-inbox` 读取；不能用新 token 访问旧端点。
 
 #### 测试 7：上游代码收信确实经过 requests.get（关键）
 
@@ -399,7 +418,7 @@ npx wrangler d1 execute mail_free_db --remote --command "SELECT revoked FROM reb
 - [ ] D1 字段完整（PRAGMA 确认 10 个必需字段）
 - [ ] `/api/rebind/config` 返回 `enabled: true`
 - [ ] Worker 部署方式二选一，无重复部署
-- [ ] 第五节 5.2 的 7 项真实环境测试全部通过
+- [ ] 第五节 5.2 的 8 项真实环境测试全部通过
 - [ ] Render 日志无敏感信息明文
 - [ ] 终态后 token 自动撤销（不依赖前端轮询）
 

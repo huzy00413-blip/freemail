@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS rebind_inbox_tokens (
   max_uses              INTEGER DEFAULT 200,
   baseline_message_id   INTEGER,
   baseline_received_at  TEXT,
+  mailbox_type          TEXT NOT NULL DEFAULT 'new',
   revoked               INTEGER DEFAULT 0,
   created_at            TEXT    DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(mailbox_id) REFERENCES mailboxes(id) ON DELETE CASCADE

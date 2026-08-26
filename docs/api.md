@@ -20,7 +20,7 @@
 当请求方携带与服务端环境变量 `JWT_TOKEN`（别名 `JWT_SECRET`）完全一致的令牌时，将跳过会话 Cookie/JWT 校验，直接被识别为最高管理员（strictAdmin）。
 
 **配置项：**
-- `wrangler.toml` → `[vars]` → `JWT_TOKEN="你的超管令牌"`
+- Cloudflare Worker Secret：`JWT_TOKEN`（不要写入 `wrangler.toml` 或源码）
 
 **令牌携带方式（任选其一）：**
 - Header（标准）：`Authorization: Bearer <JWT_TOKEN>`

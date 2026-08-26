@@ -188,11 +188,19 @@
       <div class="card" id="cardAccount">
         <h2><span class="step-num">1</span> 账号信息</h2>
         <div class="info-banner">
-          旧邮箱仅用于登录验证，换绑验证码只会发送到<strong>新邮箱</strong>，旧邮箱无需接收邮件。
+          旧邮箱登录若触发邮箱验证码，将从<strong>旧邮箱</strong>收取；点击换绑后，新邮箱再接收换绑验证码。两个邮箱都必须是 freemail 中已有且你有权限读取的邮箱。
         </div>
         <div class="form-group">
           <label>旧邮箱（ChatGPT 登录邮箱）</label>
-          <input type="email" id="oldEmail" placeholder="old@example.com" autocomplete="off" />
+          <input type="email" id="oldEmail" list="mailboxOptions" placeholder="old@example.com" autocomplete="off" />
+          <datalist id="mailboxOptions"></datalist>
+        </div>
+        <div class="form-group" id="oldRecvGroup" style="display:none">
+          <label>旧邮箱接码地址</label>
+          <div class="recv-box">
+            <div class="recv-label">登录触发旧邮箱验证码时，服务从此地址读取：</div>
+            <div class="recv-url" id="oldRecvUrl"></div>
+          </div>
         </div>
         <div class="form-group">
           <label>密码</label>
@@ -218,7 +226,7 @@
         <div class="form-group" id="recvGroup" style="display:none">
           <label>新邮箱收信地址（自动生成，只读）</label>
           <div class="recv-box">
-            <div class="recv-label">验证码将发送至此邮箱，由 freemail 自动接收：</div>
+            <div class="recv-label">换绑验证码将发送至此邮箱，由 freemail 自动接收：</div>
             <div class="recv-url" id="recvUrl"></div>
           </div>
         </div>
@@ -328,9 +336,16 @@ async function loadMailboxes() {
     }
     select.innerHTML = '<option value="">请选择新邮箱...</option>' +
       mailboxList.map(m => `<option value="${escapeHtml(m.address)}">${escapeHtml(m.address)}</option>`).join('');
+    document.getElementById('mailboxOptions').innerHTML = mailboxList
+      .map(m => `<option value="${escapeHtml(m.address)}"></option>`).join('');
 
     // 从 URL 参数自动选中
     const params = new URLSearchParams(window.location.search);
+    const presetOldEmail = (params.get('old_email') || '').trim();
+    if (presetOldEmail) {
+      document.getElementById('oldEmail').value = presetOldEmail;
+      onOldEmailInput();
+    }
     const presetEmail = (params.get('new_email') || '').trim().toLowerCase();
     if (presetEmail) {
       const match = mailboxList.find(m => m.address.toLowerCase() === presetEmail);
@@ -360,9 +375,18 @@ function onMailboxChange() {
   const recvGroup = document.getElementById('recvGroup');
   if (addr) {
     recvGroup.style.display = 'block';
-    document.getElementById('recvUrl').textContent = window.location.origin + '/rebind/inbox';
+    document.getElementById('recvUrl').textContent = window.location.origin + '/rebind/new-inbox';
   } else {
     recvGroup.style.display = 'none';
+  }
+}
+
+function onOldEmailInput() {
+  const value = document.getElementById('oldEmail').value.trim();
+  const group = document.getElementById('oldRecvGroup');
+  group.style.display = value ? 'block' : 'none';
+  if (value) {
+    document.getElementById('oldRecvUrl').textContent = window.location.origin + '/rebind/old-inbox';
   }
 }
 
@@ -508,7 +532,7 @@ async function pollStatus(taskId) {
       if (d.status === 'running') {
         log('换绑进行中：正在登录旧邮箱...');
       } else if (d.status === 'waiting_code') {
-        log('验证码已发送至新邮箱，等待 freemail 接收...');
+        log('正在等待对应邮箱验证码，freemail 会按当前登录步骤读取旧邮箱或新邮箱...');
       } else if (TERMINAL_STATUSES.has(d.status)) {
         clearInterval(pollTimer);
         pollTimer = null;
@@ -566,6 +590,7 @@ function escapeHtml(s) {
   if (!enabled) return;
 
   document.getElementById('newEmailSelect').addEventListener('change', onMailboxChange);
+  document.getElementById('oldEmail').addEventListener('input', onOldEmailInput);
   await loadMailboxes();
 })();
 </script>
