@@ -24,6 +24,7 @@
 
 import { Hono } from 'hono';
 import { getInitializedDatabase } from '../db/index.js';
+import { decryptProxyUrl } from '../utils/proxy-crypto.js';
 
 const router = new Hono();
 
@@ -250,10 +251,27 @@ router.get('/rebind/proxies', async (c) => {
     const { results } = await db.prepare(
       'SELECT proxy_url FROM proxy_pool WHERE enabled = 1 ORDER BY id ASC'
     ).all();
-    return c.json({ proxies: (results || []).map(r => r.proxy_url) });
+
+    // 解密代理 URL（仅返回给持有 service token 的 Python 服务，HTTPS 保护传输）
+    const encKey = String(c.env.PROXY_ENCRYPTION_KEY || '').trim();
+    if (!encKey) {
+      console.error('[rebind] PROXY_ENCRYPTION_KEY 未配置，无法解密代理');
+      return c.json({ error: '代理加密密钥未配置' }, 500);
+    }
+
+    const proxies = [];
+    for (const row of (results || [])) {
+      try {
+        const decrypted = await decryptProxyUrl(row.proxy_url, encKey);
+        proxies.push(decrypted);
+      } catch (e) {
+        console.error('[rebind] 代理解密失败，跳过该条');
+      }
+    }
+    return c.json({ proxies });
   } catch (e) {
     console.error('[rebind] proxies 查询失败:', e);
-    return c.json({ error: '查询失败: ' + e.message }, 500);
+    return c.json({ error: '查询失败' }, 500);
   }
 });
 

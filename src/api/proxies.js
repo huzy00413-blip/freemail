@@ -13,6 +13,7 @@
  */
 
 import { jsonResponse, errorResponse, isStrictAdmin } from './helpers.js';
+import { encryptProxyUrl, hashProxyUrl } from '../utils/proxy-crypto.js';
 
 const SUPPORTED_SCHEMES = new Set(['http', 'https', 'socks5', 'socks5h']);
 const DEFAULT_SCHEME = (typeof process !== 'undefined' && process.env && process.env.PROXY_DEFAULT_SCHEME) || 'socks5h';
@@ -113,15 +114,21 @@ export async function handleProxiesApi(request, db, url, path, options) {
         return errorResponse(e.message, 400);
       }
 
+      if (!options.proxyEncryptionKey) {
+        return errorResponse('代理加密密钥未配置（PROXY_ENCRYPTION_KEY）', 500);
+      }
+
       try {
+        const encrypted = await encryptProxyUrl(normalized.url, options.proxyEncryptionKey);
+        const hash = await hashProxyUrl(normalized.url);
         await db.prepare(
-          `INSERT INTO proxy_pool (proxy_url, proxy_display, proxy_scheme, enabled, last_check_status, fail_count)
-           VALUES (?, ?, ?, 1, 'unknown', 0)`
-        ).bind(normalized.url, normalized.display, normalized.scheme).run();
+          `INSERT INTO proxy_pool (proxy_url, proxy_hash, proxy_display, proxy_scheme, enabled, last_check_status, fail_count)
+           VALUES (?, ?, ?, ?, 1, 'unknown', 0)`
+        ).bind(encrypted, hash, normalized.display, normalized.scheme).run();
         return jsonResponse({ success: true, proxy: { display: normalized.display, scheme: normalized.scheme } });
       } catch (e) {
         const msg = String(e.message);
-        if (msg.includes('UNIQUE') || msg.includes('PRIMARY')) {
+        if (msg.includes('UNIQUE') || msg.includes('PRIMARY') || msg.includes('constraint')) {
           return errorResponse('该代理已存在', 409);
         }
         return errorResponse('添加失败：' + msg, 500);
@@ -140,11 +147,15 @@ export async function handleProxiesApi(request, db, url, path, options) {
       if (lines.length > 500) return errorResponse('单次最多添加 500 条代理', 400);
       if (!lines.length) return errorResponse('未提供有效代理行', 400);
 
-      // 查询现有代理 URL 用于去重
-      let existingUrls = new Set();
+      if (!options.proxyEncryptionKey) {
+        return errorResponse('代理加密密钥未配置（PROXY_ENCRYPTION_KEY）', 500);
+      }
+
+      // 查询现有代理 hash 用于去重
+      let existingHashes = new Set();
       try {
-        const { results } = await db.prepare('SELECT proxy_url FROM proxy_pool').all();
-        existingUrls = new Set((results || []).map(r => r.proxy_url));
+        const { results } = await db.prepare('SELECT proxy_hash FROM proxy_pool WHERE proxy_hash IS NOT NULL').all();
+        existingHashes = new Set((results || []).map(r => r.proxy_hash));
       } catch (_) { /* 表可能为空 */ }
 
       const toInsert = [];
@@ -155,12 +166,14 @@ export async function handleProxiesApi(request, db, url, path, options) {
         const lineNum = i + 1;
         try {
           const normalized = normalizeProxy(lines[i]);
-          if (existingUrls.has(normalized.url) || seenInBatch.has(normalized.url)) {
+          const hash = await hashProxyUrl(normalized.url);
+          if (existingHashes.has(hash) || seenInBatch.has(hash)) {
             errors.push({ line: lineNum, error: '重复代理' });
             continue;
           }
-          seenInBatch.add(normalized.url);
-          toInsert.push(normalized);
+          seenInBatch.add(hash);
+          const encrypted = await encryptProxyUrl(normalized.url, options.proxyEncryptionKey);
+          toInsert.push({ encrypted, hash, normalized });
         } catch (e) {
           errors.push({ line: lineNum, error: e.message });
         }
@@ -171,10 +184,12 @@ export async function handleProxiesApi(request, db, url, path, options) {
       if (toInsert.length) {
         try {
           const stmt = db.prepare(
-            `INSERT INTO proxy_pool (proxy_url, proxy_display, proxy_scheme, enabled, last_check_status, fail_count)
-             VALUES (?, ?, ?, 1, 'unknown', 0)`
+            `INSERT INTO proxy_pool (proxy_url, proxy_hash, proxy_display, proxy_scheme, enabled, last_check_status, fail_count)
+             VALUES (?, ?, ?, ?, 1, 'unknown', 0)`
           );
-          const batch = toInsert.map(n => stmt.bind(n.url, n.display, n.scheme));
+          const batch = toInsert.map(item =>
+            stmt.bind(item.encrypted, item.hash, item.normalized.display, item.normalized.scheme)
+          );
           await db.batch(batch);
           added = toInsert.length;
         } catch (e) {

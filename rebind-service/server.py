@@ -188,7 +188,7 @@ def _fetch_worker_proxies() -> list[str] | None:
         resp = _requests_mod.get(
             f"{_WORKER_API_BASE}/rebind/proxies",
             headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
-            timeout=10,
+            timeout=(5, 10),  # (连接超时 5s, 读取超时 10s)
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -933,8 +933,19 @@ async def health() -> dict[str, Any]:
     with _proxy_lock:
         total_proxies = len(_proxies)
         available_proxies = sum(1 for p in _proxies if p["available"] and p["fail_count"] < MAX_PROXY_FAILURES)
+
+    # 代理池启用但池为空时返回 degraded（HTTP 200，不触发 Render 重启）
+    # 代理池未启用（直连模式）时始终 ok
+    if _PROXY_POOL_ENABLED and total_proxies == 0:
+        status = "degraded"
+        ready = False
+    else:
+        status = "ok"
+        ready = True
+
     return {
-        "status": "ok",
+        "status": status,
+        "ready": ready,
         "rebind_core_loaded": run_rebind_email is not None,
         "core_dir": str(CORE_DIR),
         "tasks": len(_tasks),

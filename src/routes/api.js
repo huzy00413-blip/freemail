@@ -45,6 +45,7 @@ router.all('/api/*', async (c) => {
     workerOrigin: c.env.WORKER_ORIGIN || '',
     rebindServiceUrl: c.env.REBIND_SERVICE_URL || '',
     rebindServiceToken: c.env.REBIND_SERVICE_TOKEN || '',
+    proxyEncryptionKey: c.env.PROXY_ENCRYPTION_KEY || '',
     authPayload
   };
 
