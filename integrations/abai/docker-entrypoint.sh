@@ -24,5 +24,5 @@ fi
 # 启动 noVNC（端口 6080 -> VNC 5900）
 websockify --web=/usr/share/novnc 6080 localhost:5900 &
 
-# 启动 FastAPI 后端
-exec uvicorn main:app --host 0.0.0.0 --port 8000
+# 启动 FastAPI 后端（Render 通过 PORT 环境变量指定端口，本地默认 8000）
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"
