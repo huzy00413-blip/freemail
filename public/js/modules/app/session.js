@@ -81,6 +81,7 @@ export function applySessionUI(session) {
     const allMailboxesLink = document.getElementById('all-mailboxes');
     const domainsLink = document.getElementById('domains-link');
     const proxiesLink = document.getElementById('proxies-link');
+    const abaiLink = document.getElementById('abai-link');
     
     if (session && (session.strictAdmin || session.role === 'guest')) {
       if (adminLink) adminLink.style.display = 'inline-flex';
@@ -92,6 +93,7 @@ export function applySessionUI(session) {
     // 域名管理和代理池仅严格管理员可见
     if (domainsLink) domainsLink.style.display = session?.strictAdmin ? 'inline-flex' : 'none';
     if (proxiesLink) proxiesLink.style.display = session?.strictAdmin ? 'inline-flex' : 'none';
+    if (abaiLink) abaiLink.style.display = session?.strictAdmin ? 'inline-flex' : 'none';
   } catch(_) {}
 }
 
