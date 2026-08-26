@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="precheck-hide">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>外部接码地址管理 - iDing's临时邮箱</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/app-modal.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+  <script src="/js/theme-toggle.js"></script>
+  <script src="/js/auth-guard.js" defer></script>
+  <script>
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => {
+          if (s && (s.role === 'admin' || s.strictAdmin)){
+            try{ document.documentElement.classList.remove('precheck-hide'); }catch(_){ }
+            return;
+          }
+          location.replace('/');
+        })
+        .catch(() => {
+          if (window.AuthGuard) { window.AuthGuard.goLoading('/html/external-inboxes.html', '正在校验权限…'); }
+          else { location.replace('/templates/loading.html?redirect=%2Fhtml%2Fexternal-inboxes.html'); }
+        });
+    })();
+  </script>
+  <style>
+    .precheck-hide body{ visibility: hidden !important; }
+    .ext-inbox-container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .ext-inbox-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .ext-inbox-title { font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+    .ext-inbox-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ext-inbox-table-wrapper { overflow-x: auto; }
+    .ext-inbox-table { width: 100%; border-collapse: collapse; }
+    .ext-inbox-table th, .ext-inbox-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color, #e5e7eb); font-size: 14px; }
+    .ext-inbox-table th { background: var(--bg-secondary, #f9fafb); font-weight: 600; color: var(--text-secondary, #6b7280); }
+    .ext-inbox-url { font-family: monospace; font-size: 12px; word-break: break-all; max-width: 400px; display: inline-block; }
+    .badge-enabled { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    .badge-disabled { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    .row-actions { display: flex; gap: 6px; }
+    .btn-icon-sm { padding: 4px 8px; font-size: 12px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: var(--text-secondary, #9ca3af); }
+    .form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .form-row .form-group { flex: 1; min-width: 200px; }
+    .batch-textarea { width: 100%; min-height: 160px; font-family: monospace; font-size: 13px; padding: 10px; border: 1px solid var(--border-color, #d1d5db); border-radius: 6px; resize: vertical; }
+    .batch-hint { font-size: 12px; color: var(--text-secondary, #6b7280); margin-top: 6px; line-height: 1.5; }
+    .result-summary { margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 13px; }
+    .result-success { background: #dcfce7; color: #166534; }
+    .result-error { background: #fee2e2; color: #991b1b; }
+    .result-errors-list { margin-top: 8px; font-size: 12px; max-height: 120px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+      </span>
+      <span>外部接码地址管理</span>
+    </div>
+    <div class="nav-actions">
+      <a href="/html/admin.html" class="btn btn-ghost" style="text-decoration:none">
+        <span>返回管理</span>
+      </a>
+      <button id="logout" class="btn btn-secondary">退出登录</button>
+    </div>
+  </div>
+
+  <div class="ext-inbox-container">
+    <div class="ext-inbox-header">
+      <div class="ext-inbox-title">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        外部接码地址绑定
+      </div>
+      <div class="ext-inbox-actions">
+        <button id="btn-add" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          添加接码地址
+        </button>
+        <button id="btn-batch" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          批量导入
+        </button>
+        <button id="btn-refresh" class="btn btn-ghost">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          刷新
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="loading" class="loading-indicator" style="padding:20px">
+        <div class="spinner"></div><span>加载中…</span>
+      </div>
+      <div id="table-area" style="display:none">
+        <div class="ext-inbox-table-wrapper">
+          <table class="ext-inbox-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>邮箱</th>
+                <th>接码地址（脱敏）</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div id="empty" class="empty-state" style="display:none">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+          <p>暂无外部接码地址，点击"添加接码地址"开始</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加模态框 -->
+  <div class="modal" id="add-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">添加外部接码地址</div>
+        <button id="add-close" class="close-btn" aria-label="关闭">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">邮箱地址</label>
+          <input id="add-email" class="input" type="email" placeholder="user@icloud.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">接码 URL</label>
+          <input id="add-url" class="input" type="url" placeholder="https://stayai.me/?email=user@icloud.com" />
+          <div class="batch-hint">仅允许 http/https，禁止内网地址。URL 中的敏感参数（auth_code/token 等）将被脱敏存储和显示。</div>
+        </div>
+        <div class="form-group">
+          <label class="toggle-label">
+            <input id="add-enabled" type="checkbox" class="toggle-input" checked />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">启用</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="add-cancel" class="btn btn-secondary">取消</button>
+        <button id="add-save" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量导入模态框 -->
+  <div class="modal" id="batch-modal">
+    <div class="modal-card" style="max-width:640px">
+      <div class="modal-header">
+        <div class="modal-title">批量导入外部接码地址</div>
+        <button id="batch-close" class="close-btn" aria-label="关闭">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <textarea id="batch-text" class="batch-textarea" placeholder="user1@icloud.com----https://stayai.me/?email=user1@icloud.com
+user2@icloud.com----https://api798.com/get_code?email=user2%40icloud.com&auth_code=xxx"></textarea>
+        <div class="batch-hint">
+          每行一条，使用 <code>----</code>（四个短横线）分隔邮箱和 URL。<br/>
+          最多 500 条，重复邮箱自动跳过。错误信息不回显完整 URL。
+        </div>
+        <div id="batch-result"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="batch-cancel" class="btn btn-secondary">取消</button>
+        <button id="batch-import" class="btn btn-primary">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer-slot"></div>
+  <script src="/js/toast-utils.js"></script>
+  <script type="module">
+    import { apiFetch } from '/js/api.js';
+
+    const tbody = document.getElementById('tbody');
+    const loading = document.getElementById('loading');
+    const tableArea = document.getElementById('table-area');
+    const empty = document.getElementById('empty');
+
+    async function loadList() {
+      loading.style.display = '';
+      tableArea.style.display = 'none';
+      try {
+        const data = await apiFetch('/api/admin/external-inboxes');
+        const items = data.items || [];
+        tbody.innerHTML = '';
+        if (items.length === 0) {
+          empty.style.display = '';
+        } else {
+          empty.style.display = 'none';
+          for (const item of items) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${item.id}</td>
+              <td><strong>${escapeHtml(item.email)}</strong></td>
+              <td><span class="ext-inbox-url">${escapeHtml(item.inbox_url_masked || item.inbox_url)}</span></td>
+              <td>${item.enabled ? '<span class="badge-enabled">启用</span>' : '<span class="badge-disabled">禁用</span>'}</td>
+              <td>${escapeHtml(item.created_at || '')}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-ghost btn-icon-sm" data-action="toggle" data-id="${item.id}" data-enabled="${item.enabled}">${item.enabled ? '禁用' : '启用'}</button>
+                  <button class="btn btn-danger-outline btn-icon-sm" data-action="delete" data-id="${item.id}">删除</button>
+                </div>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          }
+        }
+        tableArea.style.display = '';
+      } catch (e) {
+        if (window.showToast) window.showToast('加载失败：' + e.message, 'error');
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s || '';
+      return d.innerHTML;
+    }
+
+    tbody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      if (action === 'toggle') {
+        const enabled = btn.dataset.enabled === 'true';
+        try {
+          await apiFetch(`/api/admin/external-inboxes/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !enabled }) });
+          loadList();
+        } catch (err) { if (window.showToast) window.showToast('操作失败：' + err.message, 'error'); }
+      } else if (action === 'delete') {
+        if (!confirm('确认删除该接码地址？')) return;
+        try {
+          await apiFetch(`/api/admin/external-inboxes/${id}`, { method: 'DELETE' });
+          if (window.showToast) window.showToast('已删除', 'success');
+          loadList();
+        } catch (err) { if (window.showToast) window.showToast('删除失败：' + err.message, 'error'); }
+      }
+    });
+
+    // 添加
+    const addModal = document.getElementById('add-modal');
+    document.getElementById('btn-add').onclick = () => { addModal.style.display = 'flex'; };
+    document.getElementById('add-close').onclick = () => { addModal.style.display = 'none'; };
+    document.getElementById('add-cancel').onclick = () => { addModal.style.display = 'none'; };
+    document.getElementById('add-save').onclick = async () => {
+      const email = document.getElementById('add-email').value.trim();
+      const url = document.getElementById('add-url').value.trim();
+      const enabled = document.getElementById('add-enabled').checked;
+      if (!email || !url) { if (window.showToast) window.showToast('邮箱和 URL 不能为空', 'error'); return; }
+      try {
+        await apiFetch('/api/admin/external-inboxes', { method: 'POST', body: JSON.stringify({ email, inbox_url: url, enabled }) });
+        if (window.showToast) window.showToast('添加成功', 'success');
+        addModal.style.display = 'none';
+        document.getElementById('add-email').value = '';
+        document.getElementById('add-url').value = '';
+        loadList();
+      } catch (err) { if (window.showToast) window.showToast('添加失败：' + err.message, 'error'); }
+    };
+
+    // 批量
+    const batchModal = document.getElementById('batch-modal');
+    document.getElementById('btn-batch').onclick = () => { batchModal.style.display = 'flex'; document.getElementById('batch-result').innerHTML = ''; };
+    document.getElementById('batch-close').onclick = () => { batchModal.style.display = 'none'; };
+    document.getElementById('batch-cancel').onclick = () => { batchModal.style.display = 'none'; };
+    document.getElementById('batch-import').onclick = async () => {
+      const text = document.getElementById('batch-text').value.trim();
+      if (!text) { if (window.showToast) window.showToast('内容不能为空', 'error'); return; }
+      const resultDiv = document.getElementById('batch-result');
+      resultDiv.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><span>导入中…</span></div>';
+      try {
+        const data = await apiFetch('/api/admin/external-inboxes/batch', { method: 'POST', body: JSON.stringify({ proxies: text }) });
+        let html = `<div class="result-summary result-success">共 ${data.total} 条，成功 ${data.added} 条，失败 ${data.failed} 条</div>`;
+        if (data.errors && data.errors.length) {
+          html += '<div class="result-errors-list"><strong>失败详情：</strong><ul>';
+          for (const e of data.errors) html += `<li>第 ${e.line} 行：${escapeHtml(e.error)}</li>`;
+          html += '</ul></div>';
+        }
+        resultDiv.innerHTML = html;
+        document.getElementById('batch-text').value = '';
+        loadList();
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="result-summary result-error">导入失败：${escapeHtml(err.message)}</div>`;
+      }
+    };
+
+    document.getElementById('btn-refresh').onclick = loadList;
+    document.getElementById('logout').onclick = async () => { try { await apiFetch('/api/session/logout', { method: 'POST' }); } catch(_) {} location.href = '/'; };
+
+    // footer
+    (async function(){ try { const res = await fetch('/templates/footer.html', { cache: 'no-cache' }); const html = await res.text(); const slot = document.getElementById('footer-slot'); if (slot) slot.outerHTML = html; } catch(_){} })();
+
+    loadList();
+  </script>
+</body>
+</html>
