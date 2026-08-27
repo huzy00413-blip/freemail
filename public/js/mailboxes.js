@@ -489,8 +489,8 @@ async function initGuestMode() {
     const sessionResp = await fetch('/api/session');
     if (sessionResp.ok) {
       const session = await sessionResp.json();
-      // 仅严格管理员在全部邮箱页可见换绑入口（后端仍做 getMailboxAccess 校验）
-      setRebindAvailable(session.strictAdmin === true);
+      // 非 guest 用户在全部邮箱页可见换绑入口
+      setRebindAvailable(session.role !== 'guest' && session.username !== 'guest');
       if (session.role === 'guest' || session.username === 'guest') {
         window.__GUEST_MODE__ = true;
         // 初始化 mock 数据
