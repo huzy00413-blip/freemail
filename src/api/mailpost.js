@@ -8,13 +8,13 @@ import { jsonResponse, errorResponse, isStrictAdmin } from './helpers.js';
 
 const API_TIMEOUT = 15000;
 
-function getMailpostConfig(options) {
+export function getMailpostConfig(options) {
   const baseUrl = String(options.mailpostApiUrl || '').replace(/\/+$/, '');
   const adminToken = String(options.mailpostAdminToken || '');
   return { baseUrl, adminToken, configured: !!(baseUrl && adminToken) };
 }
 
-async function mailpostFetch(baseUrl, adminToken, path, options = {}) {
+export async function mailpostFetch(baseUrl, adminToken, path, options = {}) {
   const url = `${baseUrl}${path}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeout || API_TIMEOUT);
