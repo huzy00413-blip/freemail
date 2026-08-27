@@ -138,3 +138,59 @@ export async function logout() {
 export async function initSession() {
   await fetchSession();
 }
+
+/**
+ * 从缓存初始化会话（不发起网络请求）
+ */
+export function initSessionFromCache() {
+  try {
+    const cached = localStorage.getItem('mailfree:user');
+    if (cached) {
+      currentUser = JSON.parse(cached);
+      applySessionUI();
+      notifyListeners();
+    }
+  } catch (_) {}
+}
+
+/**
+ * 验证当前会话（发起网络请求）
+ * @returns {Promise<object|null>} 用户信息或 null
+ */
+export async function validateSession() {
+  try {
+    const res = await fetch('/api/session', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      currentUser = data;
+      try { localStorage.setItem('mailfree:user', JSON.stringify(data)); } catch (_) {}
+      applySessionUI();
+      notifyListeners();
+      return data;
+    }
+  } catch (_) {}
+  currentUser = null;
+  try { localStorage.removeItem('mailfree:user'); } catch (_) {}
+  applySessionUI();
+  notifyListeners();
+  return null;
+}
+
+/**
+ * 检查是否为访客模式
+ * @returns {boolean}
+ */
+export function isGuest() {
+  return currentUser && currentUser.role === 'guest';
+}
+
+/**
+ * 初始化访客模式
+ */
+export function initGuestMode() {
+  window.__GUEST_MODE__ = true;
+  // 隐藏管理员相关元素
+  document.querySelectorAll('[data-auth="admin"], [data-auth="strict-admin"]').forEach(el => {
+    el.style.display = 'none';
+  });
+}
