@@ -23,10 +23,10 @@ export function isLoggedIn() {
 }
 
 /**
- * 检查是否为严格管理员（root）
+ * 检查是否为严格管理员（root 或 ADMIN_NAME 本尊）
  */
 export function isStrictAdmin() {
-  return currentUser && currentUser.role === 'root';
+  return !!(currentUser && (currentUser.role === 'root' || currentUser.strictAdmin === true));
 }
 
 /**
@@ -58,8 +58,9 @@ function notifyListeners() {
 export async function fetchSession() {
   try {
     const data = await apiFetch('/api/session');
-    if (data && data.user) {
-      currentUser = data.user;
+    // /api/session 返回 { authenticated, role, username, strictAdmin }
+    if (data && (data.authenticated || data.username)) {
+      currentUser = data;
     } else {
       currentUser = null;
     }

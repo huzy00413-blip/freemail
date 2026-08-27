@@ -8,7 +8,7 @@
 
 import { jsonResponse, errorResponse, isStrictAdmin, getJwtPayload } from './helpers.js';
 import { getExternalInbox } from './external-inboxes.js';
-import { getMailpostMailbox } from './mailpost.js';
+import { getMailpostMailbox, getMailpostConfig, mailpostFetch } from './mailpost.js';
 import { validateInboxUrl } from '../utils/ssrf.js';
 
 /** 从 options 读取换绑服务配置 */
@@ -99,6 +99,63 @@ async function resolveInboxConfig(db, email, label, options, taskId) {
   }
 
   return { type: 'none' };
+}
+
+/**
+ * 批量提交成功后，把账号凭据写入持久化账号池（rebind_accounts）。
+ * 同一 old_email 重复导入时更新凭据并重置状态。
+ */
+async function upsertRebindAccount(db, acc, taskId, newEmail, newInboxUrl) {
+  await db.prepare(`
+    INSERT INTO rebind_accounts
+      (old_email, password, totp_secret, old_inbox_url, login_type, new_email, new_inbox_url, task_id, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created', datetime('now'))
+    ON CONFLICT(old_email) DO UPDATE SET
+      password = excluded.password,
+      totp_secret = excluded.totp_secret,
+      old_inbox_url = excluded.old_inbox_url,
+      login_type = excluded.login_type,
+      new_email = excluded.new_email,
+      new_inbox_url = excluded.new_inbox_url,
+      task_id = excluded.task_id,
+      status = 'created',
+      at_masked = '',
+      error = '',
+      updated_at = datetime('now')
+  `).bind(
+    acc.oldEmail, acc.password, acc.totp || '', acc.oldInboxUrl || '',
+    acc.loginType || '', newEmail || '', newInboxUrl || '', taskId || ''
+  ).run();
+}
+
+/**
+ * 懒同步：把 rebind-service 返回的终态任务结果写回 rebind_accounts。
+ * 在 /api/rebind/tasks 轮询时触发，页面打开即持久化，无需改动 Python 服务。
+ */
+async function syncTerminalTasks(db, tasks) {
+  const terminal = (tasks || []).filter(t =>
+    ['success', 'failed', 'cancelled', 'expired'].includes(String(t.status || '')));
+  if (!terminal.length) return;
+  for (const t of terminal) {
+    const result = t.result || {};
+    const newEmail = String(result.session_email || result.new_email || '');
+    try {
+      await db.prepare(`
+        UPDATE rebind_accounts SET
+          status = ?, new_email = CASE WHEN ? != '' THEN ? ELSE new_email END,
+          at_masked = CASE WHEN ? != '' THEN ? ELSE at_masked END,
+          error = CASE WHEN ? != '' THEN ? ELSE error END,
+          updated_at = datetime('now')
+        WHERE task_id = ?
+      `).bind(
+        String(t.status || ''),
+        newEmail, newEmail,
+        String(result.access_token_masked || ''), String(result.access_token_masked || ''),
+        String(t.error || result.message || ''), String(t.error || result.message || ''),
+        String(t.task_id || '')
+      ).run();
+    } catch (_) { /* 单条失败不影响整体返回 */ }
+  }
 }
 
 /**
@@ -346,6 +403,8 @@ export async function handleRebindApi(request, db, url, path, options) {
       if (!resp.ok) {
         return errorResponse(data.detail || data.error || '换绑服务返回错误', resp.status);
       }
+      // 懒同步：把终态任务结果落库到 rebind_accounts（账号池持久化）
+      try { await syncTerminalTasks(db, data.tasks || []); } catch (_) {}
       return jsonResponse(data);
     } catch (e) {
       return errorResponse('无法连接换绑服务：' + e.message, 502);
@@ -599,6 +658,13 @@ export async function handleRebindApi(request, db, url, path, options) {
         if (!resp.ok) {
           results.push({ index: i, task_id: taskId, old_email: oldEmail, new_email: newEmail, ok: false, error: data.detail || data.error || '换绑服务返回错误' });
         } else {
+          // 写入持久化账号池（凭据 + 任务关联）
+          try {
+            await upsertRebindAccount(db, {
+              oldEmail, password, totp: totpSecret, oldInboxUrl,
+              loginType: totpSecret ? '密码+TOTP' : (oldInboxUrl ? '密码+接码' : '密码'),
+            }, taskId, newEmail, newInboxUrl);
+          } catch (_) { /* 账号池写入失败不阻断任务 */ }
           results.push({ index: i, task_id: taskId, old_email: oldEmail, new_email: newEmail, ok: true, status: data.status || 'created' });
         }
       } catch (e) {
@@ -613,6 +679,111 @@ export async function handleRebindApi(request, db, url, path, options) {
       failed: results.length - succeeded,
       results,
     });
+  }
+
+  // POST /api/rebind/import-mailboxes — 从邮箱系统一键导入新邮箱池
+  // source: 'freemail'（本站托管，自动签收 token）| 'mailpost'（本地邮局项目，自动收信）
+  if (path === '/api/rebind/import-mailboxes' && request.method === 'POST') {
+    if (!isStrictAdmin(request, options)) {
+      return errorResponse('需要管理员权限', 403);
+    }
+
+    let body;
+    try { body = await request.json(); } catch (_) { return errorResponse('请求体必须为 JSON', 400); }
+    const source = String(body.source || 'freemail').trim().toLowerCase();
+    const count = Math.min(200, Math.max(1, Number(body.count || 10)));
+    const domain = String(body.domain || '').trim().toLowerCase();
+
+    const mailboxes = [];
+
+    if (source === 'freemail') {
+      try {
+        let rows;
+        if (domain) {
+          ({ results: rows } = await db.prepare(
+            'SELECT address FROM mailboxes WHERE address LIKE ? ORDER BY id DESC LIMIT ?'
+          ).bind('%@' + domain, count).all());
+        } else {
+          ({ results: rows } = await db.prepare(
+            'SELECT address FROM mailboxes ORDER BY id DESC LIMIT ?'
+          ).bind(count).all());
+        }
+        for (const r of (rows || [])) {
+          mailboxes.push({ email: String(r.address || '').toLowerCase(), source: 'freemail' });
+        }
+      } catch (e) {
+        return errorResponse('读取本站邮箱失败：' + e.message, 500);
+      }
+    } else if (source === 'mailpost') {
+      const { baseUrl, adminToken, configured } = getMailpostConfig(options);
+      if (!configured) {
+        return errorResponse('邮局系统未配置（MAILPOST_API_URL / MAILPOST_ADMIN_TOKEN）', 503);
+      }
+      const result = await mailpostFetch(baseUrl, adminToken,
+        `/api/admin/mailboxes?page=1&page_size=${count}`);
+      if (!result.ok) {
+        return errorResponse(result.data.error || '获取邮局邮箱列表失败', 502);
+      }
+      const list = result.data?.data?.mailboxes || result.data?.mailboxes || [];
+      for (const m of list) {
+        const addr = String(m.address || '').toLowerCase();
+        if (!addr || (domain && !addr.endsWith('@' + domain))) continue;
+        mailboxes.push({ email: addr, source: 'mailpost' });
+        if (mailboxes.length >= count) break;
+      }
+    } else {
+      return errorResponse('source 仅支持 freemail 或 mailpost', 400);
+    }
+
+    return jsonResponse({ source, count: mailboxes.length, mailboxes });
+  }
+
+  // GET /api/rebind/accounts — 已保存的换绑账号池（脱敏显示）
+  if (path === '/api/rebind/accounts' && request.method === 'GET') {
+    if (!isStrictAdmin(request, options)) {
+      return errorResponse('需要管理员权限', 403);
+    }
+    const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit') || 500)));
+    try {
+      const { results } = await db.prepare(`
+        SELECT id, old_email, new_email, login_type, at_masked, status, error, task_id,
+               datetime(created_at) AS created_at, datetime(updated_at) AS updated_at
+        FROM rebind_accounts ORDER BY updated_at DESC, id DESC LIMIT ?
+      `).bind(limit).all();
+      return jsonResponse({ accounts: results || [] });
+    } catch (e) {
+      return errorResponse('读取账号池失败：' + e.message, 500);
+    }
+  }
+
+  // GET /api/rebind/accounts/export — 导出完整账号池（含凭据，仅管理员）
+  if (path === '/api/rebind/accounts/export' && request.method === 'GET') {
+    if (!isStrictAdmin(request, options)) {
+      return errorResponse('需要管理员权限', 403);
+    }
+    try {
+      const { results } = await db.prepare(`
+        SELECT old_email, password, totp_secret, old_inbox_url, new_email, new_inbox_url,
+               login_type, at_masked, status, error
+        FROM rebind_accounts ORDER BY updated_at DESC, id DESC LIMIT 2000
+      `).all();
+      const lines = ['原账号----密码----TOTP----旧接码地址----新邮箱----新接码地址----登录类型----AT(脱敏)----状态----失败原因'];
+      for (const r of (results || [])) {
+        lines.push([
+          r.old_email, r.password, r.totp_secret, r.old_inbox_url,
+          r.new_email, r.new_inbox_url, r.login_type, r.at_masked, r.status, r.error
+        ].map(v => String(v ?? '')).join('----'));
+      }
+      return new Response(lines.join('\n'), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="rebind-account-pool.txt"',
+        },
+      });
+    } catch (e) {
+      return errorResponse('导出失败：' + e.message, 500);
+    }
   }
 
   return null;

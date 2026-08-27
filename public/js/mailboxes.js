@@ -34,6 +34,7 @@ const els = {
   // 批量操作按钮
   batchAllow: document.getElementById('batch-allow'),
   batchDeny: document.getElementById('batch-deny'),
+  exportMailboxes: document.getElementById('export-mailboxes'),
   batchFavorite: document.getElementById('batch-favorite'),
   batchUnfavorite: document.getElementById('batch-unfavorite'),
   batchForward: document.getElementById('batch-forward'),
@@ -447,13 +448,52 @@ els.viewGrid?.addEventListener('click', () => switchView('grid'));
 els.viewList?.addEventListener('click', () => switchView('list'));
 els.logout?.addEventListener('click', async () => { try { await fetch('/api/logout', { method: 'POST' }); } catch(_) {} location.replace('/html/login.html'); });
 
-// 批量操作按钮
-els.batchAllow?.addEventListener('click', () => openBatchModal('allow', '批量放行登录', '✅', '输入要允许登录的邮箱地址（每行一个或用逗号分隔）：'));
-els.batchDeny?.addEventListener('click', () => openBatchModal('deny', '批量禁止登录', '🚫', '输入要禁止登录的邮箱地址（每行一个或用逗号分隔）：'));
-els.batchFavorite?.addEventListener('click', () => openBatchModal('favorite', '批量收藏', '⭐', '输入要收藏的邮箱地址（每行一个或用逗号分隔）：'));
-els.batchUnfavorite?.addEventListener('click', () => openBatchModal('unfavorite', '批量取消收藏', '☆', '输入要取消收藏的邮箱地址（每行一个或用逗号分隔）：'));
-els.batchForward?.addEventListener('click', () => openBatchModal('forward', '批量设置转发', '↪️', '输入要设置转发的邮箱地址（每行一个或用逗号分隔）：'));
-els.batchClearForward?.addEventListener('click', () => openBatchModal('clear-forward', '批量清除转发', '🚫', '输入要清除转发的邮箱地址（每行一个或用逗号分隔）：'));
+  // 批量操作按钮
+  els.batchAllow?.addEventListener('click', () => openBatchModal('allow', '批量放行登录', '✅', '输入要允许登录的邮箱地址（每行一个或用逗号分隔）：'));
+  els.batchDeny?.addEventListener('click', () => openBatchModal('deny', '批量禁止登录', '🚫', '输入要禁止登录的邮箱地址（每行一个或用逗号分隔）：'));
+  els.batchFavorite?.addEventListener('click', () => openBatchModal('favorite', '批量收藏', '⭐', '输入要收藏的邮箱地址（每行一个或用逗号分隔）：'));
+  els.batchUnfavorite?.addEventListener('click', () => openBatchModal('unfavorite', '批量取消收藏', '☆', '输入要取消收藏的邮箱地址（每行一个或用逗号分隔）：'));
+  els.batchForward?.addEventListener('click', () => openBatchModal('forward', '批量设置转发', '↪️', '输入要设置转发的邮箱地址（每行一个或用逗号分隔）：'));
+  els.batchClearForward?.addEventListener('click', () => openBatchModal('clear-forward', '批量清除转发', '🚫', '输入要清除转发的邮箱地址（每行一个或用逗号分隔）：'));
+
+  // 导出全部邮箱地址（可直接粘贴到换绑工具的邮箱池；本站/邮局托管邮箱免接码地址）
+  els.exportMailboxes?.addEventListener('click', async () => {
+    if (window.__GUEST_MODE__) { showToast('访客模式不可导出', 'error'); return; }
+    const btn = els.exportMailboxes;
+    const original = btn ? btn.querySelector('span:last-child')?.textContent : null;
+    if (btn) btn.disabled = true;
+    try {
+      const addresses = [];
+      for (let p = 1; p <= 100; p++) {
+        const data = await loadMailboxes({ page: p, size: 100 });
+        const list = Array.isArray(data) ? data : (data.list || []);
+        for (const item of list) {
+          const addr = String(item.address || item.email || '').trim();
+          if (addr) addresses.push(addr);
+        }
+        const total = Number(data.total ?? 0);
+        if (!list.length || (total && addresses.length >= total)) break;
+      }
+      if (!addresses.length) { showToast('没有可导出的邮箱', 'error'); return; }
+      const lines = [
+        '# 本站托管邮箱（自动收信，无需接码地址）',
+        '# 用法：整行粘贴到「无痕账号换绑工具 → 导入新邮箱」，或使用工具内「从邮箱系统导入」一键读取',
+        ...addresses
+      ];
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `mailboxes-${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      showToast(`已导出 ${addresses.length} 个邮箱地址`, 'success');
+    } catch (e) {
+      showToast('导出失败: ' + (e.message || '未知错误'), 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      void original;
+    }
+  });
 
 // 批量操作模态框事件
 els.batchModalClose?.addEventListener('click', closeBatchModal);

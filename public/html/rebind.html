@@ -252,10 +252,19 @@
       <!-- Mailboxes -->
       <div class="panel">
         <div class="panel-title"><span class="idx">2</span>导入新邮箱</div>
-        <div class="panel-sub">仅支持 邮箱----接码地址 格式。成功后该接码地址会随新邮箱写入账号导出结果。</div>
-        <textarea id="ta-mails" placeholder="new@example.com----https://example.com/code"></textarea>
+        <div class="panel-sub">支持 邮箱----接码地址 或仅邮箱地址。本站/邮局邮箱可免 URL 自动收信。</div>
+        <textarea id="ta-mails" placeholder="new@example.com----https://example.com/code&#10;new2@example.com（本站/邮局托管，自动收信）"></textarea>
         <div class="panel-actions">
           <button class="btn btn-blue" id="btn-import-mails">导入邮箱</button>
+        </div>
+        <div class="panel-sub" style="margin-top:10px">一键从邮箱系统读取（无需手填接码地址）：</div>
+        <div class="panel-actions" style="gap:6px">
+          <select id="mail-source" class="btn" style="padding:8px 10px;background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:8px">
+            <option value="freemail">本站邮箱系统（freemail 托管）</option>
+            <option value="mailpost">本地邮局项目（自动收信）</option>
+          </select>
+          <input type="number" id="mail-count" min="1" max="200" value="10" style="width:74px;padding:8px 10px;background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:8px" title="导入数量" />
+          <button class="btn" id="btn-fetch-mails">从邮箱系统导入</button>
         </div>
       </div>
       <!-- Proxies -->
@@ -299,6 +308,28 @@
           <button class="btn" id="btn-export-at">单独提取 AT</button>
           <button class="btn btn-red" id="btn-clear">清空当前会话</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ===== Saved account pool ===== -->
+    <div class="panel">
+      <div class="task-bar">
+        <div>
+          <div class="panel-title" style="margin-bottom:2px">已保存账号池 <span class="sub" id="pool-count" style="font-size:12px;color:var(--muted)"></span></div>
+          <div class="panel-sub" style="margin-bottom:0">提交过的账号与换绑结果自动保存在服务端（D1），刷新/换浏览器都不会丢；换绑成功后自动写入新邮箱和 AT。</div>
+        </div>
+        <div class="task-buttons">
+          <button class="btn" id="btn-pool-refresh">刷新</button>
+          <button class="btn" id="btn-pool-export">导出账号池</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:280px;overflow:auto">
+        <table>
+          <thead><tr>
+            <th>原账号</th><th>新邮箱</th><th>登录类型</th><th>状态</th><th>AT(脱敏)</th><th>更新时间</th>
+          </tr></thead>
+          <tbody id="pool-rows"><tr class="empty-row"><td colspan="6">账号池为空，提交换绑后自动保存</td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -354,10 +385,20 @@
   <script type="module">
     import { apiFetch } from '/js/api.js';
 
+    // apiFetch 返回原始 Response；这里统一解析 JSON 并在非 2xx 时抛错
+    async function jsonFetch(path, options = {}) {
+      const res = await apiFetch(path, options);
+      let j = {};
+      try { j = await res.json(); } catch (_) {}
+      if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+      return j;
+    }
+
     // ========== State (in-memory only) ==========
     const state = {
       accounts: [],   // {id, oldEmail, password, totp, oldInboxUrl, newEmail, loginType, status, step, atMasked, error, taskId}
-      mailboxes: [],  // {email, inboxUrl, status, assignedTo}
+      mailboxes: [],  // {email, inboxUrl, source, status, assignedTo}
+      pool: [],       // 服务端持久化的账号池 rebind_accounts
       proxies: [],    // {display, user, scheme, basic, basicMs, precheck, precheckMs, reason}
       logs: [],
       global: { threads: '0/30', gqueue: 0, gdone: 0, gsuccess: 0, grate: '0%' },
@@ -411,9 +452,10 @@
     }
     function parseMailboxLine(line){
       const parts=line.split('----').map(s=>s.trim()).filter(Boolean);
-      if(parts.length!==2)return {error:'邮箱格式应为 邮箱----接码地址'};
+      if(parts.length<1||parts.length>2)return {error:'邮箱格式应为 邮箱 或 邮箱----接码地址'};
       const [email,url]=parts;
       if(!email.includes('@'))return {error:'邮箱格式不合法: '+email};
+      if(parts.length===1)return {email:email.toLowerCase(),inboxUrl:'',source:'auto'};
       if(!isUrl(url))return {error:'接码地址不是合法 URL: '+url};
       return {email:email.toLowerCase(),inboxUrl:url};
     }
@@ -473,7 +515,29 @@
       }
       $('ta-mails').value='';
       log('info',`导入邮箱 ${ok} 条，失败 ${fail} 条`);
+      if(fail)log('warn','部分行解析失败: '+errs.slice(0,3).join('; '));
       toast(`导入邮箱 ${ok} 条`,'success');
+      renderAll();
+    };
+
+    // 从邮箱系统一键导入新邮箱池（freemail / 邮局，免手填接码地址）
+    $('btn-fetch-mails').onclick=async()=>{
+      const btn=$('btn-fetch-mails');btn.disabled=true;btn.textContent='导入中…';
+      try{
+        const payload={source:$('mail-source').value,count:Number($('mail-count').value)||10};
+        const data=await jsonFetch('/api/rebind/import-mailboxes',{method:'POST',body:JSON.stringify(payload)});
+        const existing=new Set(state.mailboxes.map(m=>m.email));
+        let added=0;
+        for(const m of (data.mailboxes||[])){
+          if(existing.has(m.email))continue;
+          existing.add(m.email);
+          state.mailboxes.push({email:m.email,inboxUrl:'',source:m.source,status:'available',assignedTo:''});
+          added++;
+        }
+        log('ok',`从${payload.source==='mailpost'?'邮局系统':'本站邮箱系统'}读取 ${data.count} 条，新增 ${added} 条（免 URL 自动收信）`);
+        toast(`已导入 ${added} 个新邮箱`,'success');
+      }catch(e){toast('导入失败: '+e.message,'error');log('err','邮箱系统导入失败: '+e.message)}
+      btn.disabled=false;btn.textContent='从邮箱系统导入';
       renderAll();
     };
 
@@ -483,7 +547,7 @@
       if(!lines.length){toast('请输入代理','error');return}
       const btn=$('btn-save-proxies');btn.disabled=true;btn.textContent='保存中…';
       try{
-        const data=await apiFetch('/api/admin/proxies/batch',{method:'POST',body:JSON.stringify({proxies:text})});
+        const data=await jsonFetch('/api/admin/proxies/batch',{method:'POST',body:JSON.stringify({proxies:text})});
         log('ok',`代理池保存：新增 ${data.added} 条，失败 ${data.failed} 条`);
         toast(`保存成功：新增 ${data.added} 条`,'success');
         $('ta-proxies').value='';
@@ -496,7 +560,7 @@
       const btn=$('btn-test-proxies');btn.disabled=true;btn.textContent='测试中…';
       log('info','开始测试全部代理连通性…');
       try{
-        const data=await apiFetch('/api/admin/proxies/test',{method:'POST'});
+        const data=await jsonFetch('/api/admin/proxies/test',{method:'POST'});
         const items=data.items||[];
         for(const it of items){
           const p=state.proxies.find(x=>x.display===it.address);
@@ -519,7 +583,7 @@
       if(!url){toast('请输入取码地址','error');return}
       const res=$('inbox-test-result');res.className='test-result';res.textContent='测试中…';
       try{
-        const data=await apiFetch('/api/rebind/test-inbox-url',{method:'POST',body:JSON.stringify({url})});
+        const data=await jsonFetch('/api/rebind/test-inbox-url',{method:'POST',body:JSON.stringify({url})});
         if(data.ok&&data.status<400){
           res.className='test-result ok';
           res.innerHTML=`✅ HTTP ${data.status}｜${data.code_found?'识别到验证码模式（'+esc(data.code_preview)+'）':'未发现验证码字段（但地址可访问）'}<br><span style="color:var(--muted)">${esc(data.snippet?.slice(0,150)||'')}</span>`;
@@ -541,7 +605,7 @@
           accounts:ready.map(a=>({old_email:a.oldEmail,password:a.password,totp_secret:a.totp,old_inbox_url:a.oldInboxUrl})),
           mailboxes:state.mailboxes.filter(m=>m.status==='available').map(m=>({email:m.email,inbox_url:m.inboxUrl}))
         };
-        const data=await apiFetch('/api/rebind/batch',{method:'POST',body:JSON.stringify(payload)});
+        const data=await jsonFetch('/api/rebind/batch',{method:'POST',body:JSON.stringify(payload)});
         // Map results back to accounts
         for(const r of data.results||[]){
           const acc=state.accounts.find(a=>a.oldEmail===(r.old_email||'').toLowerCase());
@@ -577,7 +641,7 @@
     $('btn-stop').onclick=async()=>{
       if(!confirm('确认停止所有运行中的换绑任务？'))return;
       try{
-        const data=await apiFetch('/api/rebind/batch-cancel',{method:'POST'});
+        const data=await jsonFetch('/api/rebind/batch-cancel',{method:'POST'});
         log('warn',`已请求取消 ${data.cancelled} 个活跃任务`);
         toast(`已取消 ${data.cancelled} 个任务`);
       }catch(e){toast('停止失败: '+e.message,'error')}
@@ -623,7 +687,7 @@
 
     async function pollTasks(){
       try{
-        const data=await apiFetch('/api/rebind/tasks?limit=200');
+        const data=await jsonFetch('/api/rebind/tasks?limit=200');
         const tasks=data.tasks||[];
         const taskMap=new Map(tasks.map(t=>[t.task_id,t]));
         let changed=false;
@@ -635,7 +699,8 @@
             continue;
           }
           const st=t.status;
-          if(acc.status!==st){changed=true}
+          const prev=acc.status;
+          if(prev!==st){changed=true}
           acc.status=st;
           acc.step=statusStep(st,t);
           if(t.error)acc.error=String(t.error).slice(0,200);
@@ -645,10 +710,12 @@
             if(t.result.message&&st==='failed')acc.error=t.result.message;
           }
           if(st==='success'){
+            if(prev!=='success')window._poolDirty=true;
             const mb=state.mailboxes.find(m=>m.email===acc.newEmail.toLowerCase());
             if(mb){mb.status='used';mb.assignedTo=acc.oldEmail}
           }
         }
+        if(window._poolDirty){window._poolDirty=false;loadPool()}
         // Global stats
         const activeTasks=tasks.filter(t=>['created','running','waiting_code'].includes(t.status));
         const running=tasks.filter(t=>['running','waiting_code'].includes(t.status)).length;
@@ -677,12 +744,12 @@
     // Health polling (always on for global stats)
     async function pollHealth(){
       try{
-        const data=await apiFetch('/api/rebind/health');
+        const data=await jsonFetch('/api/rebind/health');
         if(data.ok){
           const mc=data.max_concurrent||30;
           // 从任务列表获取真实运行数（health 只返回总任务数）
           try{
-            const td=await apiFetch('/api/rebind/tasks?limit=200');
+            const td=await jsonFetch('/api/rebind/tasks?limit=200');
             const tasks=td.tasks||[];
             const running=tasks.filter(t=>['running','waiting_code'].includes(t.status)).length;
             const queued=tasks.filter(t=>t.status==='created').length;
@@ -704,7 +771,7 @@
     // ========== Server proxy load ==========
     async function loadProxiesFromServer(){
       try{
-        const data=await apiFetch('/api/admin/proxies');
+        const data=await jsonFetch('/api/admin/proxies');
         state.proxies=(data.proxies||[]).map(p=>({
           display:p.proxy_display||'***',user:'***',scheme:p.proxy_scheme||'',
           basic:p.last_check_status==='ok'?'ok':p.last_check_status==='failed'?'fail':'unknown',
@@ -715,8 +782,44 @@
       }catch(_){}
     }
 
+    // ========== Saved account pool (server-side D1) ==========
+    async function loadPool(){
+      try{
+        const data=await jsonFetch('/api/rebind/accounts?limit=500');
+        state.pool=data.accounts||[];
+        renderPool();
+      }catch(_){/* 静默：表未建等情况 */}
+    }
+
+    function renderPool(){
+      const tb=$('pool-rows');
+      const pool=state.pool||[];
+      $('pool-count').textContent=pool.length?`（${pool.length} 条）`:'';
+      if(!pool.length){tb.innerHTML='<tr class="empty-row"><td colspan="6">账号池为空，提交换绑后自动保存</td></tr>';return}
+      tb.innerHTML=pool.map(a=>`<tr>
+        <td><div class="email-cell">${esc(maskEmail(a.old_email))}</div></td>
+        <td>${a.new_email?'<div class="email-cell">'+esc(maskEmail(a.new_email))+'</div>':'<span class="sub">—</span>'}</td>
+        <td>${esc(a.login_type||'')}</td>
+        <td>${statusBadge(a.status)}</td>
+        <td>${a.at_masked?'<span class="sub" title="AT已脱敏">'+esc(a.at_masked.slice(0,16))+'…</span>':'<span class="sub">—</span>'}</td>
+        <td><span class="sub">${esc(a.updated_at||a.created_at||'')}</span></td>
+      </tr>`).join('');
+    }
+
+    $('btn-pool-refresh').onclick=()=>{loadPool();toast('账号池已刷新')};
+
+    $('btn-pool-export').onclick=async()=>{
+      try{
+        const resp=await fetch('/api/rebind/accounts/export',{headers:{'Cache-Control':'no-cache'}});
+        if(!resp.ok){const j=await resp.json().catch(()=>({}));throw new Error(j.error||('HTTP '+resp.status))}
+        const text=await resp.text();
+        downloadText(text,'rebind-account-pool.txt');
+        log('ok','已导出账号池');
+      }catch(e){toast('导出失败: '+e.message,'error')}
+    };
+
     // ========== Rendering ==========
-    function renderAll(){renderStats();renderAccounts();renderMails();renderProxies();renderLogs();updateAccountStatusText()}
+    function renderAll(){renderStats();renderAccounts();renderMails();renderProxies();renderLogs();renderPool();updateAccountStatusText()}
 
     function renderStats(){
       const a=state.accounts;
@@ -759,10 +862,12 @@
       const tb=$('mail-rows');
       if(!state.mailboxes.length){tb.innerHTML='<tr class="empty-row"><td colspan="3">暂无邮箱</td></tr>';return}
       const badgeMap={available:['available','可用'],reserved:['reserved','已预留'],used:['used','已使用']};
+      const srcMap={freemail:'本站',mailpost:'邮局',auto:'自动'};
       tb.innerHTML=state.mailboxes.map(m=>{
         const[cls,txt]=badgeMap[m.status]||['unknown',m.status];
+        const src=m.inboxUrl?'URL接码':(srcMap[m.source]||'自动');
         return `<tr>
-          <td><div class="email-cell">${esc(m.email)}</div></td>
+          <td><div class="email-cell">${esc(m.email)}</div><div class="sub" style="font-size:10px;color:var(--muted)">${src}</div></td>
           <td><span class="badge badge-${cls}">${txt}</span></td>
           <td>${m.assignedTo?esc(maskEmail(m.assignedTo)):'<span class="sub">—</span>'}</td>
         </tr>`;
@@ -805,6 +910,7 @@
 
     // ========== Init ==========
     loadProxiesFromServer();
+    loadPool();
     pollHealth();
     healthTimer=setInterval(pollHealth,15000);
     // If there are already tasks on the service, show them
