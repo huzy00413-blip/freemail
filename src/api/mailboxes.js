@@ -31,7 +31,7 @@ export async function fetchMailpostMailboxes(options, page = 1, size = 20, searc
 
   const params = new URLSearchParams();
   params.set('page', String(Math.max(1, Number(page) || 1)));
-  params.set('per_page', String(Math.min(100, Math.max(1, Number(size) || 20))));
+  params.set('page_size', String(Math.min(100, Math.max(1, Number(size) || 20))));
   if (search && String(search).trim()) {
     params.set('search', String(search).trim());
   }
@@ -55,10 +55,20 @@ export async function fetchMailpostMailboxes(options, page = 1, size = 20, searc
 
   const list = rawList.map(m => {
     const addr = String(m.address || '');
+    // 邮局 created_at 为 Unix 秒级时间戳，转 ISO 字符串兼容前端 formatTime
+    let createdAt = '';
+    if (m.created_at) {
+      const ts = Number(m.created_at);
+      if (!Number.isNaN(ts)) {
+        createdAt = new Date(ts * 1000).toISOString();
+      } else {
+        createdAt = String(m.created_at);
+      }
+    }
     return {
       id: m.id != null ? String(m.id) : addr,
       address: addr,
-      created_at: m.created_at || m.createdAt || m.created || '',
+      created_at: createdAt,
       is_pinned: 0,
       password_is_default: 1,
       can_login: m.is_active === false || m.is_expired ? 0 : 1,

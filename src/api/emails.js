@@ -36,12 +36,22 @@ export async function fetchMailpostEmails(options, address) {
   // 3. 映射为前端兼容格式 {id, sender, to_addrs, subject, received_at, is_read, preview, verification_code}
   const emails = (result.emails || []).map((e, idx) => {
     const body = String(e.Body || e.body || e.Text || e.text || '');
+    // 邮局 Sent 可能为字符串，Timestamp 为 Unix 秒级时间戳，统一转 ISO
+    let receivedAt = '';
+    if (e.Sent) {
+      receivedAt = String(e.Sent);
+    } else if (e.Timestamp) {
+      const ts = Number(e.Timestamp);
+      if (!Number.isNaN(ts)) receivedAt = new Date(ts * 1000).toISOString();
+    } else if (e.Date) {
+      receivedAt = String(e.Date);
+    }
     return {
       id: e.id || e.ID || e.MessageID || `mp-${idx}`,
       sender: e.From || e.from || e.Sender || e.sender || '',
       to_addrs: address,
       subject: e.Subject || e.subject || '(无主题)',
-      received_at: e.Sent || e.Timestamp || e.Date || e.received_at || '',
+      received_at: receivedAt,
       is_read: 0,
       preview: body.substring(0, 120),
       verification_code: '',
