@@ -35,8 +35,8 @@ export async function handleApiRequest(request, db, mailDomains, options) {
   const mailboxAdminResp = await handleMailboxAdminApi(request, db, url, path, options);
   if (mailboxAdminResp) return mailboxAdminResp;
 
-  // 邮箱列表/创建
-  if (path.startsWith('/api/mailboxes')) {
+  // 邮箱列表/创建/域名/生成
+  if (path.startsWith('/api/mailboxes') || path === '/api/domains' || path === '/api/generate' || path === '/api/create' || path === '/api/user/quota' || path === '/api/mailbox/info') {
     return handleMailboxesApi(request, db, mailDomains, url, path, options);
   }
 
