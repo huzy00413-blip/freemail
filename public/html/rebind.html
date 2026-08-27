@@ -1,1 +1,815 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="zh-CN" class="precheck-hide">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>无痕账号换绑工具</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <script src="/js/theme-toggle.js"></script>
+  <script src="/js/auth-guard.js" defer></script>
+  <script>
+    (function(){
+      fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
+        .then(r => r.ok ? r.json() : Promise.reject('unauth'))
+        .then(s => {
+          if (s && s.user){
+            try{ document.documentElement.classList.remove('precheck-hide'); }catch(_){ }
+            return;
+          }
+          location.replace('/');
+        })
+        .catch(() => {
+          if (window.AuthGuard) { window.AuthGuard.goLoading('/html/rebind.html', '正在校验登录…'); }
+          else { location.replace('/templates/loading.html?redirect=%2Fhtml%2Frebind.html'); }
+        });
+    })();
+  </script>
+  <style>
+    :root{
+      --bg:#080d18;--panel:#0f1a2b;--panel2:#132036;--line:#1e3450;--line2:#26405f;
+      --text:#e6eefc;--muted:#7e96b5;--blue:#4a8eff;--blue-dim:#1a3a66;
+      --green:#22c55e;--green-bg:#0f2e1f;--red:#ef4444;--red-bg:#3a1820;
+      --amber:#f59e0b;--amber-bg:#3a2a0a;
+      --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      background:var(--bg);color:var(--text);
+      font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      min-height:100vh;
+    }
+    .precheck-hide body{visibility:hidden!important}
+    a{color:var(--blue);text-decoration:none}
+
+    /* ===== Top bar ===== */
+    .topbar{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:14px 28px;background:linear-gradient(180deg,#0c1626,#080d18);
+      border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;
+    }
+    .topbar h1{font-size:18px;font-weight:700;letter-spacing:.5px}
+    .topbar .sub{font-size:12px;color:var(--muted);margin-top:2px}
+    .topbar-actions{display:flex;gap:8px}
+    .btn{
+      border:1px solid var(--line2);background:var(--panel2);color:var(--text);
+      padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;
+      transition:all .15s;display:inline-flex;align-items:center;gap:6px;font-weight:500;
+    }
+    .btn:hover{border-color:var(--blue);color:#fff}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .btn-blue{background:var(--blue);border-color:var(--blue);color:#fff}
+    .btn-blue:hover{filter:brightness(1.12)}
+    .btn-green{background:#166534;border-color:#22c55e;color:#bbf7d0}
+    .btn-green:hover{background:#15803d;color:#fff}
+    .btn-red{background:#7f1d1d;border-color:#ef4444;color:#fecaca}
+    .btn-red:hover{background:#991b1b;color:#fff}
+    .btn-ghost{background:transparent}
+
+    /* ===== Layout ===== */
+    .shell{max-width:1480px;margin:0 auto;padding:20px 24px 50px}
+
+    /* ===== Stats ===== */
+    .stats{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;margin-bottom:18px}
+    .stat{
+      background:linear-gradient(150deg,var(--panel2),var(--panel));
+      border:1px solid var(--line);border-radius:12px;padding:12px 14px;position:relative;overflow:hidden;
+    }
+    .stat::after{content:"";position:absolute;width:60px;height:60px;border-radius:50%;right:-24px;bottom:-32px;background:#4a8eff10}
+    .stat-label{font-size:11px;color:var(--muted);white-space:nowrap}
+    .stat-value{font-size:22px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+    .stat-value.green{color:var(--green)}
+    .stat-value.red{color:var(--red)}
+    .stat-value.amber{color:var(--amber)}
+    .stat-value.blue{color:var(--blue)}
+
+    /* ===== Cards / Panels ===== */
+    .panel{
+      background:linear-gradient(150deg,var(--panel2),var(--panel));
+      border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;
+    }
+    .panel-title{font-size:15px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+    .panel-title .idx{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:22px;height:22px;border-radius:50%;background:var(--blue-dim);color:var(--blue);
+      font-size:12px;font-weight:700;border:1px solid var(--blue);
+    }
+    .panel-sub{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+    textarea{
+      width:100%;background:#070d18;border:1px solid var(--line);color:var(--text);
+      border-radius:9px;padding:11px 12px;font-size:12.5px;font-family:var(--mono);
+      resize:vertical;min-height:120px;outline:none;line-height:1.6;
+    }
+    textarea:focus{border-color:var(--blue);box-shadow:0 0 0 2px #4a8eff18}
+    textarea::placeholder{color:#4a6180}
+    input[type="text"],input[type="email"]{
+      background:#070d18;border:1px solid var(--line);color:var(--text);
+      border-radius:8px;padding:9px 12px;font-size:13px;outline:none;width:100%;
+    }
+    input:focus{border-color:var(--blue);box-shadow:0 0 0 2px #4a8eff18}
+    .format-hint{font-size:11px;color:var(--muted);margin:8px 0 10px;line-height:1.7;font-family:var(--mono)}
+    .panel-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+
+    /* ===== Test inbox row ===== */
+    .test-row{display:flex;gap:10px;align-items:center}
+    .test-row input{flex:1}
+    .test-result{
+      margin-top:10px;padding:10px 13px;border-radius:8px;font-size:12.5px;
+      background:#070d18;border:1px solid var(--line);min-height:20px;word-break:break-all;
+    }
+    .test-result.ok{border-color:#166534;color:#86efac}
+    .test-result.fail{border-color:#7f1d1d;color:#fca5a5}
+
+    /* ===== Task control ===== */
+    .task-bar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+    .task-buttons{display:flex;gap:8px;flex-wrap:wrap}
+
+    /* ===== Tables ===== */
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:700px}
+    th,td{padding:9px 11px;text-align:left;border-bottom:1px solid #16263a;white-space:nowrap}
+    th{
+      font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+      background:#0a1422;position:sticky;top:0;font-weight:600;
+    }
+    tr:last-child td{border-bottom:0}
+    tr:hover td{background:#0f1d31}
+    td .email-cell{font-weight:600}
+    td .sub{font-size:11px;color:var(--muted)}
+    .empty-row td{text-align:center;color:var(--muted);padding:26px 0!important}
+
+    .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
+    .badge-created{background:#1a2a44;color:#7eb8ff}
+    .badge-running{background:#3a2e12;color:#fbbf24}
+    .badge-waiting{background:#3a2e12;color:#fcd34d}
+    .badge-success{background:#0f2e1f;color:#4ade80}
+    .badge-failed{background:#3a1820;color:#f87171}
+    .badge-cancelled{background:#2a2a2a;color:#9ca3af}
+    .badge-expired{background:#2a2a2a;color:#9ca3af}
+    .badge-available{background:#0f2e1f;color:#4ade80}
+    .badge-reserved{background:#1a2a44;color:#7eb8ff}
+    .badge-used{background:#1a2a44;color:#93c5fd}
+    .badge-unknown{background:#2a2a2a;color:#9ca3af}
+
+    /* ===== Logs ===== */
+    .logs{
+      height:280px;overflow-y:auto;background:#050a12;border:1px solid var(--line);
+      border-radius:10px;padding:12px;font:12px/1.75 var(--mono);
+    }
+    .log-line{border-bottom:1px solid #0e1a2c;padding:2px 0;word-break:break-all}
+    .log-time{color:#4a6180}
+    .log-info{color:#5b9cff}
+    .log-ok{color:#4ade80}
+    .log-warn{color:#fbbf24}
+    .log-err{color:#f87171}
+    .log-empty{color:var(--muted);text-align:center;padding:40px 0}
+
+    /* ===== Scrollbar ===== */
+    ::-webkit-scrollbar{width:8px;height:8px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#1e3450;border-radius:4px}
+    ::-webkit-scrollbar-thumb:hover{background:#2a4a6f}
+
+    /* ===== Toast ===== */
+    .toast{
+      position:fixed;right:22px;bottom:22px;background:#132036;border:1px solid var(--line2);
+      box-shadow:0 12px 32px #0008;padding:12px 16px;border-radius:10px;display:none;z-index:9999;
+      font-size:13px;max-width:360px;
+    }
+    .toast.show{display:block;animation:toastIn .2s ease}
+    .toast.ok{border-color:#166534}
+    .toast.err{border-color:#7f1d1d}
+    @keyframes toastIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+
+    /* ===== Mascot ===== */
+    .mascot{position:fixed;right:18px;bottom:18px;font-size:48px;opacity:.5;pointer-events:none;z-index:1;user-select:none}
+
+    @media(max-width:1100px){
+      .stats{grid-template-columns:repeat(6,1fr)}
+      .grid-3{grid-template-columns:1fr}
+      .grid-2{grid-template-columns:1fr}
+    }
+    @media(max-width:640px){
+      .shell{padding:14px 10px 40px}
+      .stats{grid-template-columns:repeat(3,1fr)}
+      .stat-value{font-size:18px}
+      .topbar{padding:12px 14px}
+      .topbar h1{font-size:15px}
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>无痕账号换绑工具</h1>
+      <div class="sub">导入、换绑、导出一站完成。刷新页面仍保留当前浏览器会话，服务重启或会话过期后自动清空。</div>
+    </div>
+    <div class="topbar-actions">
+      <a class="btn btn-ghost" href="https://qm.qq.com/q/hzy00413" target="_blank" rel="noopener">👥 加入交流群</a>
+      <a class="btn" href="/">← 返回邮箱首页</a>
+    </div>
+  </div>
+
+  <div class="shell">
+    <!-- ===== Stats ===== -->
+    <div class="stats" id="stats">
+      <div class="stat"><div class="stat-label">账号</div><div class="stat-value blue" id="st-accounts">0</div></div>
+      <div class="stat"><div class="stat-label">邮箱</div><div class="stat-value blue" id="st-mails">0</div></div>
+      <div class="stat"><div class="stat-label">代理</div><div class="stat-value blue" id="st-proxies">0</div></div>
+      <div class="stat"><div class="stat-label">本会话排队</div><div class="stat-value amber" id="st-queued">0</div></div>
+      <div class="stat"><div class="stat-label">运行</div><div class="stat-value amber" id="st-running">0</div></div>
+      <div class="stat"><div class="stat-label">成功</div><div class="stat-value green" id="st-success">0</div></div>
+      <div class="stat"><div class="stat-label">失败/待取AT</div><div class="stat-value red" id="st-failed">0</div></div>
+      <div class="stat"><div class="stat-label">全局线程</div><div class="stat-value blue" id="st-threads">0/30</div></div>
+      <div class="stat"><div class="stat-label">全局排队</div><div class="stat-value amber" id="st-gqueue">0</div></div>
+      <div class="stat"><div class="stat-label">全站完成</div><div class="stat-value" id="st-gdone">0</div></div>
+      <div class="stat"><div class="stat-label">全站成功</div><div class="stat-value green" id="st-gsuccess">0</div></div>
+      <div class="stat"><div class="stat-label">全站成功率</div><div class="stat-value green" id="st-grate">0%</div></div>
+    </div>
+
+    <!-- ===== Import cards ===== -->
+    <div class="grid-3">
+      <!-- Accounts -->
+      <div class="panel">
+        <div class="panel-title"><span class="idx">1</span>导入账号</div>
+        <div class="format-hint">
+          账号——密码——TOTP<br>
+          账号——密码——接码地址<br>
+          账号——接码地址<br>
+          账号——接码地址——TOTP
+        </div>
+        <textarea id="ta-accounts" placeholder="一行一个，四种格式可混合"></textarea>
+        <div class="panel-actions">
+          <button class="btn btn-blue" id="btn-import-accounts">导入账号</button>
+        </div>
+      </div>
+      <!-- Mailboxes -->
+      <div class="panel">
+        <div class="panel-title"><span class="idx">2</span>导入新邮箱</div>
+        <div class="panel-sub">仅支持 邮箱----接码地址 格式。成功后该接码地址会随新邮箱写入账号导出结果。</div>
+        <textarea id="ta-mails" placeholder="new@example.com----https://example.com/code"></textarea>
+        <div class="panel-actions">
+          <button class="btn btn-blue" id="btn-import-mails">导入邮箱</button>
+        </div>
+      </div>
+      <!-- Proxies -->
+      <div class="panel">
+        <div class="panel-title"><span class="idx">3</span>粘贴家宽代理池</div>
+        <div class="format-hint">
+          host:port:user:pass、user:pass@host:port<br>
+          http://user:pass@host:port、socks5://...
+        </div>
+        <textarea id="ta-proxies" placeholder="一行一个代理，重新保存会替换当前代理池"></textarea>
+        <div class="panel-actions">
+          <button class="btn btn-blue" id="btn-save-proxies">保存代理池</button>
+          <button class="btn" id="btn-test-proxies">测试全部连通性</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Inbox URL test ===== -->
+    <div class="panel">
+      <div class="panel-title">取码地址兼容性测试</div>
+      <div class="panel-sub">粘贴一个取码地址，服务端会安全请求一次并判断本站能否识别；不会展示或保存验证码。</div>
+      <div class="test-row">
+        <input type="text" id="inbox-test-url" placeholder="https://example.com/code" />
+        <button class="btn btn-blue" id="btn-test-inbox">测试取码地址</button>
+      </div>
+      <div class="test-result" id="inbox-test-result">尚未测试</div>
+    </div>
+
+    <!-- ===== Task control ===== -->
+    <div class="panel">
+      <div class="task-bar">
+        <div>
+          <div class="panel-title" style="margin-bottom:2px">任务控制</div>
+          <div class="panel-sub" style="margin-bottom:0">所有用户共享 30 个换绑线程；线程满后自动按提交顺序排队。邮箱一旦换绑成功会立即更新内存账号。</div>
+        </div>
+        <div class="task-buttons">
+          <button class="btn btn-green" id="btn-start">加入全局换绑队列</button>
+          <button class="btn" id="btn-retry">一键重试失败</button>
+          <button class="btn btn-red" id="btn-stop">停止任务</button>
+          <button class="btn" id="btn-export-ok">导出成功账号</button>
+          <button class="btn" id="btn-export-at">单独提取 AT</button>
+          <button class="btn btn-red" id="btn-clear">清空当前会话</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Account table ===== -->
+    <div class="panel">
+      <div class="panel-title">账号进度</div>
+      <div class="panel-sub">每个账号独立显示当前步骤和进度。<span style="float:right;color:var(--muted)" id="account-status-text">当前无运行任务</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>原账号</th><th>当前账号</th><th>登录类型</th><th>状态</th><th>步骤/进度</th><th>AT</th><th>失败原因</th>
+          </tr></thead>
+          <tbody id="account-rows">
+            <tr class="empty-row"><td colspan="7">请先导入账号</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== Mailbox + Proxy pools ===== -->
+    <div class="grid-2">
+      <div class="panel" style="margin-bottom:0">
+        <div class="panel-title">邮箱池</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>邮箱</th><th>状态</th><th>分配账号</th></tr></thead>
+            <tbody id="mail-rows"><tr class="empty-row"><td colspan="3">暂无邮箱</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:0">
+        <div class="panel-title">代理池</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>代理</th><th>用户</th><th>基础链路</th><th>链路耗时</th><th>ChatGPT预检</th><th>预检耗时</th><th>原因</th></tr></thead>
+            <tbody id="proxy-rows"><tr class="empty-row"><td colspan="7">暂无代理</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Logs ===== -->
+    <div class="panel" style="margin-top:16px">
+      <div class="panel-title">运行日志</div>
+      <div class="panel-sub">日志仅显示掩码账号和状态，不记录密码、TOTP、接码地址、代理密码或 AT。</div>
+      <div class="logs" id="logs"><div class="log-empty">暂无日志</div></div>
+    </div>
+  </div>
+
+  <div class="mascot">🤖</div>
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { apiFetch } from '/js/api.js';
+
+    // ========== State (in-memory only) ==========
+    const state = {
+      accounts: [],   // {id, oldEmail, password, totp, oldInboxUrl, newEmail, loginType, status, step, atMasked, error, taskId}
+      mailboxes: [],  // {email, inboxUrl, status, assignedTo}
+      proxies: [],    // {display, user, scheme, basic, basicMs, precheck, precheckMs, reason}
+      logs: [],
+      global: { threads: '0/30', gqueue: 0, gdone: 0, gsuccess: 0, grate: '0%' },
+    };
+    let accountSeq = 0;
+    let pollTimer = null;
+    let healthTimer = null;
+
+    // ========== Utilities ==========
+    const $ = id => document.getElementById(id);
+    function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+    function maskEmail(e){
+      e=String(e||'');const i=e.indexOf('@');if(i<2)return e;
+      const u=e.slice(0,i),d=e.slice(i);
+      return (u.length<=4?u[0]+'***':u.slice(0,2)+'***'+u.slice(-2))+d;
+    }
+    function toast(msg,type){
+      const t=$('toast');t.textContent=msg;t.className='toast show '+(type==='error'?'err':type==='success'?'ok':'');
+      setTimeout(()=>t.className='toast',3000);
+    }
+    function log(level,msg){
+      const now=new Date();
+      const ts=now.toTimeString().slice(0,8);
+      state.logs.push({ts,level,msg});
+      if(state.logs.length>500)state.logs.shift();
+      renderLogs();
+    }
+    const TOTP_RE=/^[A-Z2-7]{16,128}$/i;
+    function isUrl(v){try{const u=new URL(v);return u.protocol==='http:'||u.protocol==='https:'}catch{return false}}
+    function isTotp(v){return TOTP_RE.test(String(v).replace(/\s+/g,'').toUpperCase())}
+
+    // ========== Parsing ==========
+    function parseAccountLine(line){
+      const parts=line.split('----').map(s=>s.trim()).filter(Boolean);
+      if(parts.length<2||parts.length>3)return {error:'字段数应为 2 或 3（用 ---- 分隔）'};
+      const email=parts[0].toLowerCase();
+      if(!email.includes('@'))return {error:'邮箱格式不合法: '+parts[0]};
+      const acc={oldEmail:email,password:'',totp:'',oldInboxUrl:'',loginType:''};
+      if(parts.length===2){
+        const s=parts[1];
+        if(isUrl(s)){acc.oldInboxUrl=s;acc.loginType='接码'}
+        else if(isTotp(s)){acc.totp=s.replace(/\s+/g,'').toUpperCase();acc.loginType='TOTP'}
+        else{acc.password=s;acc.loginType='密码'}
+      }else{
+        const [b,c]=parts.slice(1);
+        if(isUrl(c)){acc.password=b;acc.oldInboxUrl=c;acc.loginType='密码+接码'}
+        else if(isTotp(c)){acc.password=b;acc.totp=c.replace(/\s+/g,'').toUpperCase();acc.loginType='密码+TOTP'}
+        else return {error:'第三字段必须是 TOTP 或接码地址'};
+      }
+      return acc;
+    }
+    function parseMailboxLine(line){
+      const parts=line.split('----').map(s=>s.trim()).filter(Boolean);
+      if(parts.length!==2)return {error:'邮箱格式应为 邮箱----接码地址'};
+      const [email,url]=parts;
+      if(!email.includes('@'))return {error:'邮箱格式不合法: '+email};
+      if(!isUrl(url))return {error:'接码地址不是合法 URL: '+url};
+      return {email:email.toLowerCase(),inboxUrl:url};
+    }
+    function parseProxyLine(line){
+      const v=line.trim();
+      if(!v||v.startsWith('#'))return null;
+      let url,display,user='',scheme='socks5h';
+      if(v.includes('://')){
+        let u;try{u=new URL(v)}catch{return {error:'代理 URL 格式不合法'}}
+        scheme=u.protocol.replace(':','');
+        if(!['http','https','socks5','socks5h'].includes(scheme))return {error:'不支持的协议: '+scheme};
+        if(!u.hostname||!u.port)return {error:'代理缺少主机或端口'};
+        url=v;display=u.port?`${u.hostname}:${u.port}`:u.hostname;user=u.username||'';
+      }else{
+        const p=v.split(':');
+        if(p.length!==4)return {error:'格式应为 host:port:user:pass 或 URL'};
+        const [h,port,us,pa]=p;
+        if(!h||!port||!us||!pa)return {error:'代理各段不能为空'};
+        url=`socks5h://${encodeURIComponent(us)}:${encodeURIComponent(pa)}@${h}:${port}`;
+        display=`${h}:${port}`;user=us;
+      }
+      return {url,display,user:decodeURIComponent(user),scheme};
+    }
+
+    // ========== Import handlers ==========
+    $('btn-import-accounts').onclick=()=>{
+      const text=$('ta-accounts').value;
+      const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      if(!lines.length){toast('请输入账号','error');return}
+      let ok=0,fail=0;const errs=[];
+      for(const line of lines){
+        const r=parseAccountLine(line);
+        if(r.error){fail++;errs.push(r.error);continue}
+        state.accounts.push({id:++accountSeq,...r,newEmail:'',status:'ready',step:'待提交',atMasked:'',error:'',taskId:''});
+        ok++;
+      }
+      $('ta-accounts').value='';
+      log('info',`导入账号 ${ok} 条，失败 ${fail} 条`);
+      if(fail)log('warn','部分行解析失败: '+errs.slice(0,3).join('; '));
+      toast(`导入成功 ${ok} 条${fail?`，失败 ${fail} 条`:''}`,'success');
+      renderAll();
+    };
+
+    $('btn-import-mails').onclick=()=>{
+      const text=$('ta-mails').value;
+      const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      if(!lines.length){toast('请输入邮箱','error');return}
+      let ok=0,fail=0;const errs=[];
+      const existing=new Set(state.mailboxes.map(m=>m.email));
+      for(const line of lines){
+        const r=parseMailboxLine(line);
+        if(r.error){fail++;errs.push(r.error);continue}
+        if(existing.has(r.email))continue;
+        existing.add(r.email);
+        state.mailboxes.push({...r,status:'available',assignedTo:''});
+        ok++;
+      }
+      $('ta-mails').value='';
+      log('info',`导入邮箱 ${ok} 条，失败 ${fail} 条`);
+      toast(`导入邮箱 ${ok} 条`,'success');
+      renderAll();
+    };
+
+    $('btn-save-proxies').onclick=async()=>{
+      const text=$('ta-proxies').value;
+      const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l&&!l.startsWith('#'));
+      if(!lines.length){toast('请输入代理','error');return}
+      const btn=$('btn-save-proxies');btn.disabled=true;btn.textContent='保存中…';
+      try{
+        const data=await apiFetch('/api/admin/proxies/batch',{method:'POST',body:JSON.stringify({proxies:text})});
+        log('ok',`代理池保存：新增 ${data.added} 条，失败 ${data.failed} 条`);
+        toast(`保存成功：新增 ${data.added} 条`,'success');
+        $('ta-proxies').value='';
+        await loadProxiesFromServer();
+      }catch(e){toast('保存失败: '+e.message,'error');log('err','代理保存失败: '+e.message)}
+      btn.disabled=false;btn.textContent='保存代理池';
+    };
+
+    $('btn-test-proxies').onclick=async()=>{
+      const btn=$('btn-test-proxies');btn.disabled=true;btn.textContent='测试中…';
+      log('info','开始测试全部代理连通性…');
+      try{
+        const data=await apiFetch('/api/admin/proxies/test',{method:'POST'});
+        const items=data.items||[];
+        for(const it of items){
+          const p=state.proxies.find(x=>x.display===it.address);
+          if(p){
+            p.basic=it.ok?'ok':'fail';p.basicMs=it.latency_ms||0;
+            p.precheck=it.ok?'ok':'fail';p.precheckMs=it.latency_ms||0;
+            p.reason=it.ok?'':it.error||'';
+          }
+        }
+        log(data.available>0?'ok':'warn',`代理测试完成：${data.available}/${data.total} 可用`);
+        toast(`测试完成：${data.available}/${data.total} 可用`,'success');
+        renderProxies();
+      }catch(e){toast('测试失败: '+e.message,'error');log('err','代理测试失败: '+e.message)}
+      btn.disabled=false;btn.textContent='测试全部连通性';
+    };
+
+    // ========== Inbox URL test ==========
+    $('btn-test-inbox').onclick=async()=>{
+      const url=$('inbox-test-url').value.trim();
+      if(!url){toast('请输入取码地址','error');return}
+      const res=$('inbox-test-result');res.className='test-result';res.textContent='测试中…';
+      try{
+        const data=await apiFetch('/api/rebind/test-inbox-url',{method:'POST',body:JSON.stringify({url})});
+        if(data.ok&&data.status<400){
+          res.className='test-result ok';
+          res.innerHTML=`✅ HTTP ${data.status}｜${data.code_found?'识别到验证码模式（'+esc(data.code_preview)+'）':'未发现验证码字段（但地址可访问）'}<br><span style="color:var(--muted)">${esc(data.snippet?.slice(0,150)||'')}</span>`;
+        }else{
+          res.className='test-result fail';
+          res.textContent='❌ '+(data.error||`HTTP ${data.status}`);
+        }
+      }catch(e){res.className='test-result fail';res.textContent='❌ 请求失败: '+e.message}
+    };
+
+    // ========== Task control ==========
+    $('btn-start').onclick=async()=>{
+      const ready=state.accounts.filter(a=>a.status==='ready'||a.status==='failed');
+      if(!ready.length){toast('没有可提交的账号','error');return}
+      if(!state.mailboxes.some(m=>m.status==='available')){toast('邮箱池没有可用邮箱','error');return}
+      const btn=$('btn-start');btn.disabled=true;btn.textContent='提交中…';
+      try{
+        const payload={
+          accounts:ready.map(a=>({old_email:a.oldEmail,password:a.password,totp_secret:a.totp,old_inbox_url:a.oldInboxUrl})),
+          mailboxes:state.mailboxes.filter(m=>m.status==='available').map(m=>({email:m.email,inbox_url:m.inboxUrl}))
+        };
+        const data=await apiFetch('/api/rebind/batch',{method:'POST',body:JSON.stringify(payload)});
+        // Map results back to accounts
+        for(const r of data.results||[]){
+          const acc=state.accounts.find(a=>a.oldEmail===(r.old_email||'').toLowerCase());
+          if(!acc)continue;
+          if(r.ok){
+            acc.status='created';acc.step='排队中';acc.taskId=r.task_id;acc.newEmail=r.new_email||'';
+            // Mark mailbox as reserved
+            const mb=state.mailboxes.find(m=>m.email===(r.new_email||'').toLowerCase());
+            if(mb){mb.status='reserved';mb.assignedTo=acc.oldEmail}
+            log('info',`账号 ${maskEmail(acc.oldEmail)} 已加入队列 → ${maskEmail(r.new_email)}`);
+          }else{
+            acc.status='failed';acc.error=r.error||'提交失败';acc.step='提交失败';
+            log('err',`账号 ${maskEmail(acc.oldEmail)} 提交失败: ${r.error}`);
+          }
+        }
+        log('ok',`批量提交完成：${data.submitted}/${data.total} 成功入队`);
+        toast(`已提交 ${data.submitted} 个任务`,'success');
+        startPolling();
+      }catch(e){toast('提交失败: '+e.message,'error');log('err','批量提交失败: '+e.message)}
+      btn.disabled=false;btn.textContent='加入全局换绑队列';
+      renderAll();
+    };
+
+    $('btn-retry').onclick=()=>{
+      const failed=state.accounts.filter(a=>a.status==='failed');
+      if(!failed.length){toast('没有失败账号','error');return}
+      for(const a of failed){a.status='ready';a.step='待重试';a.error='';a.taskId=''}
+      log('info',`重置 ${failed.length} 个失败账号为待提交`);
+      toast(`已重置 ${failed.length} 个账号，可重新加入队列`);
+      renderAll();
+    };
+
+    $('btn-stop').onclick=async()=>{
+      if(!confirm('确认停止所有运行中的换绑任务？'))return;
+      try{
+        const data=await apiFetch('/api/rebind/batch-cancel',{method:'POST'});
+        log('warn',`已请求取消 ${data.cancelled} 个活跃任务`);
+        toast(`已取消 ${data.cancelled} 个任务`);
+      }catch(e){toast('停止失败: '+e.message,'error')}
+    };
+
+    $('btn-export-ok').onclick=()=>{
+      const ok=state.accounts.filter(a=>a.status==='success');
+      if(!ok.length){toast('没有成功账号','error');return}
+      const lines=['原账号----新邮箱----登录类型----AT(脱敏)'];
+      for(const a of ok)lines.push(`${a.oldEmail}----${a.newEmail}----${a.loginType}----${a.atMasked}`);
+      downloadText(lines.join('\n'),'success-accounts.txt');
+      log('ok',`导出成功账号 ${ok.length} 条`);
+    };
+
+    $('btn-export-at').onclick=()=>{
+      const ok=state.accounts.filter(a=>a.status==='success'&&a.atMasked);
+      if(!ok.length){toast('没有可提取的 AT','error');return}
+      const lines=['账号----AT(脱敏)'];
+      for(const a of ok)lines.push(`${a.oldEmail}----${a.atMasked}`);
+      downloadText(lines.join('\n'),'at-tokens.txt');
+      log('ok',`提取 AT ${ok.length} 条`);
+    };
+
+    $('btn-clear').onclick=()=>{
+      if(!confirm('确认清空当前会话所有账号、邮箱和日志？'))return;
+      stopPolling();
+      state.accounts=[];state.mailboxes=[];state.logs=[];accountSeq=0;
+      log('info','会话已清空');
+      renderAll();
+      toast('会话已清空');
+    };
+
+    function downloadText(text,filename){
+      const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    }
+
+    // ========== Polling ==========
+    function startPolling(){if(pollTimer)return;pollTimer=setInterval(pollTasks,3000);pollTasks()}
+    function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
+
+    async function pollTasks(){
+      try{
+        const data=await apiFetch('/api/rebind/tasks?limit=200');
+        const tasks=data.tasks||[];
+        const taskMap=new Map(tasks.map(t=>[t.task_id,t]));
+        let changed=false;
+        for(const acc of state.accounts){
+          if(!acc.taskId)continue;
+          const t=taskMap.get(acc.taskId);
+          if(!t){
+            // Task expired from service memory; leave as-is if terminal
+            continue;
+          }
+          const st=t.status;
+          if(acc.status!==st){changed=true}
+          acc.status=st;
+          acc.step=statusStep(st,t);
+          if(t.error)acc.error=String(t.error).slice(0,200);
+          if(t.result){
+            if(t.result.session_email)acc.newEmail=t.result.session_email;
+            if(t.result.access_token_masked)acc.atMasked=t.result.access_token_masked;
+            if(t.result.message&&st==='failed')acc.error=t.result.message;
+          }
+          if(st==='success'){
+            const mb=state.mailboxes.find(m=>m.email===acc.newEmail.toLowerCase());
+            if(mb){mb.status='used';mb.assignedTo=acc.oldEmail}
+          }
+        }
+        // Global stats
+        const activeTasks=tasks.filter(t=>['created','running','waiting_code'].includes(t.status));
+        const running=tasks.filter(t=>['running','waiting_code'].includes(t.status)).length;
+        const queued=tasks.filter(t=>t.status==='created').length;
+        const finished=tasks.filter(t=>['success','failed','cancelled','expired'].includes(t.status));
+        const gsuccess=tasks.filter(t=>t.status==='success').length;
+        state.global.threads=`${running}/30`;
+        state.global.gqueue=queued;
+        state.global.gdone=finished.length;
+        state.global.gsuccess=gsuccess;
+        state.global.grate=finished.length?Math.round(gsuccess/finished.length*1000)/10+'%':'0%';
+        if(changed||activeTasks.length===0){
+          if(activeTasks.length===0)stopPolling();
+        }
+        renderAll();
+      }catch(e){/* silent */}
+    }
+
+    function statusStep(st,t){
+      const map={created:'排队中…',running:'换绑中…',waiting_code:'等待验证码…',success:'换绑成功',failed:'换绑失败',cancelled:'已取消',expired:'已超时'};
+      let s=map[st]||st;
+      if(t&&t.result&&t.result.message&&st==='running')s+=' - '+t.result.message;
+      return s;
+    }
+
+    // Health polling (always on for global stats)
+    async function pollHealth(){
+      try{
+        const data=await apiFetch('/api/rebind/health');
+        if(data.ok){
+          const mc=data.max_concurrent||30;
+          // 从任务列表获取真实运行数（health 只返回总任务数）
+          try{
+            const td=await apiFetch('/api/rebind/tasks?limit=200');
+            const tasks=td.tasks||[];
+            const running=tasks.filter(t=>['running','waiting_code'].includes(t.status)).length;
+            const queued=tasks.filter(t=>t.status==='created').length;
+            const finished=tasks.filter(t=>['success','failed','cancelled','expired'].includes(t.status));
+            const gsuccess=tasks.filter(t=>t.status==='success').length;
+            state.global.threads=`${running}/${mc}`;
+            state.global.gqueue=queued;
+            state.global.gdone=finished.length;
+            state.global.gsuccess=gsuccess;
+            state.global.grate=finished.length?Math.round(gsuccess/finished.length*1000)/10+'%':'0%';
+            renderStats();
+          }catch(_){
+            state.global.threads=`0/${mc}`;
+          }
+        }
+      }catch(_){}
+    }
+
+    // ========== Server proxy load ==========
+    async function loadProxiesFromServer(){
+      try{
+        const data=await apiFetch('/api/admin/proxies');
+        state.proxies=(data.proxies||[]).map(p=>({
+          display:p.proxy_display||'***',user:'***',scheme:p.proxy_scheme||'',
+          basic:p.last_check_status==='ok'?'ok':p.last_check_status==='failed'?'fail':'unknown',
+          basicMs:0,precheck:p.last_check_status==='ok'?'ok':p.last_check_status==='failed'?'fail':'unknown',
+          precheckMs:0,reason:p.fail_count?`失败 ${p.fail_count} 次`:''
+        }));
+        renderProxies();
+      }catch(_){}
+    }
+
+    // ========== Rendering ==========
+    function renderAll(){renderStats();renderAccounts();renderMails();renderProxies();renderLogs();updateAccountStatusText()}
+
+    function renderStats(){
+      const a=state.accounts;
+      $('st-accounts').textContent=a.length;
+      $('st-mails').textContent=state.mailboxes.length;
+      $('st-proxies').textContent=state.proxies.length;
+      $('st-queued').textContent=a.filter(x=>x.status==='created'||x.status==='ready').length;
+      $('st-running').textContent=a.filter(x=>['running','waiting_code'].includes(x.status)).length;
+      $('st-success').textContent=a.filter(x=>x.status==='success').length;
+      $('st-failed').textContent=a.filter(x=>x.status==='failed').length;
+      $('st-threads').textContent=state.global.threads;
+      $('st-gqueue').textContent=state.global.gqueue;
+      $('st-gdone').textContent=state.global.gdone;
+      $('st-gsuccess').textContent=state.global.gsuccess;
+      $('st-grate').textContent=state.global.grate;
+    }
+
+    function statusBadge(st){
+      const map={ready:['created','待提交'],created:['created','排队中'],running:['running','运行中'],waiting_code:['waiting','等验证码'],
+        success:['success','成功'],failed:['failed','失败'],cancelled:['cancelled','已取消'],expired:['expired','已超时']};
+      const[cls,txt]=map[st]||['unknown',st];
+      return `<span class="badge badge-${cls}">${txt}</span>`;
+    }
+
+    function renderAccounts(){
+      const tb=$('account-rows');
+      if(!state.accounts.length){tb.innerHTML='<tr class="empty-row"><td colspan="7">请先导入账号</td></tr>';return}
+      tb.innerHTML=state.accounts.map(a=>`<tr>
+        <td><div class="email-cell">${esc(maskEmail(a.oldEmail))}</div></td>
+        <td>${a.newEmail?'<div class="email-cell">'+esc(maskEmail(a.newEmail))+'</div>':'<span class="sub">—</span>'}</td>
+        <td>${esc(a.loginType)}</td>
+        <td>${statusBadge(a.status)}</td>
+        <td>${esc(a.step)}</td>
+        <td>${a.atMasked?'<span class="sub" title="AT已脱敏">'+esc(a.atMasked.slice(0,16))+'…</span>':'<span class="sub">—</span>'}</td>
+        <td>${a.error?'<span style="color:#f87171;font-size:11px">'+esc(a.error.slice(0,60))+'</span>':'<span class="sub">—</span>'}</td>
+      </tr>`).join('');
+    }
+
+    function renderMails(){
+      const tb=$('mail-rows');
+      if(!state.mailboxes.length){tb.innerHTML='<tr class="empty-row"><td colspan="3">暂无邮箱</td></tr>';return}
+      const badgeMap={available:['available','可用'],reserved:['reserved','已预留'],used:['used','已使用']};
+      tb.innerHTML=state.mailboxes.map(m=>{
+        const[cls,txt]=badgeMap[m.status]||['unknown',m.status];
+        return `<tr>
+          <td><div class="email-cell">${esc(m.email)}</div></td>
+          <td><span class="badge badge-${cls}">${txt}</span></td>
+          <td>${m.assignedTo?esc(maskEmail(m.assignedTo)):'<span class="sub">—</span>'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderProxies(){
+      const tb=$('proxy-rows');
+      if(!state.proxies.length){tb.innerHTML='<tr class="empty-row"><td colspan="7">暂无代理</td></tr>';return}
+      tb.innerHTML=state.proxies.map(p=>`<tr>
+        <td>${esc(p.display)}</td>
+        <td>${esc(p.user?'***':'')}</td>
+        <td>${linkBadge(p.basic)}</td>
+        <td>${p.basicMs?p.basicMs+'ms':'<span class="sub">—</span>'}</td>
+        <td>${linkBadge(p.precheck)}</td>
+        <td>${p.precheckMs?p.precheckMs+'ms':'<span class="sub">—</span>'}</td>
+        <td>${p.reason?'<span style="color:#f87171;font-size:11px">'+esc(p.reason.slice(0,40))+'</span>':'<span class="sub">—</span>'}</td>
+      </tr>`).join('');
+    }
+    function linkBadge(v){
+      if(v==='ok')return '<span class="badge badge-success">通</span>';
+      if(v==='fail')return '<span class="badge badge-failed">不通</span>';
+      return '<span class="badge badge-unknown">未测</span>';
+    }
+
+    function renderLogs(){
+      const el=$('logs');
+      if(!state.logs.length){el.innerHTML='<div class="log-empty">暂无日志</div>';return}
+      el.innerHTML=state.logs.slice(-200).map(l=>
+        `<div class="log-line"><span class="log-time">${l.ts}</span> <b class="log-${l.level}">[${l.level.toUpperCase()}]</b> ${esc(l.msg)}</div>`
+      ).join('');
+      el.scrollTop=el.scrollHeight;
+    }
+
+    function updateAccountStatusText(){
+      const running=state.accounts.filter(a=>['running','waiting_code'].includes(a.status)).length;
+      const queued=state.accounts.filter(a=>a.status==='created').length;
+      $('account-status-text').textContent=running?`运行中 ${running}，排队 ${queued}`:(queued?`排队 ${queued}`:'当前无运行任务');
+    }
+
+    // ========== Init ==========
+    loadProxiesFromServer();
+    pollHealth();
+    healthTimer=setInterval(pollHealth,15000);
+    // If there are already tasks on the service, show them
+    pollTasks().then(()=>{
+      if(state.accounts.some(a=>a.taskId))startPolling();
+    });
+    log('info','换绑工具已就绪，请导入账号和邮箱');
+  </script>
+</body>
+</html>
