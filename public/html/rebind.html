@@ -13,7 +13,9 @@
       fetch('/api/session', { headers: { 'Cache-Control': 'no-cache' } })
         .then(r => r.ok ? r.json() : Promise.reject('unauth'))
         .then(s => {
-          if (s && s.user){
+          // /api/session 返回 { authenticated, role, username, strictAdmin }，无 user 字段；
+          // 本页仅对严格管理员开放，其余已登录身份回首页
+          if (s && s.authenticated && s.strictAdmin){
             try{ document.documentElement.classList.remove('precheck-hide'); }catch(_){ }
             return;
           }
