@@ -48,7 +48,11 @@
 
     <div id="app"></div>
     <script>
-      // 改进的路由守卫逻辑：优先使用 loading 页面进行权限检查，避免登录页闪屏
+      // 改进的路由守卫逻辑：未登录直接跳转登录页，避免白屏
+      function goLogin() {
+        try { sessionStorage.removeItem('auth_checked'); sessionStorage.removeItem('auth_checked_ts'); } catch(_) {}
+        window.location.replace('/html/login.html');
+      }
       (function() {
         try{
           // 检查是否是从其他页面导航过来（非地址栏直接访问）
@@ -88,11 +92,8 @@
                   .then(function(r){
                     clearTimeout(tid);
                     if (!r || !r.ok) {
-                      // 对于有cookie但验证失败的情况，直接加载应用让其内部处理
-                      // 避免跳转到登录页造成页面闪烁
-                      try{ sessionStorage.setItem('auth_checked','true'); sessionStorage.setItem('auth_checked_ts', String(Date.now())); }catch(_){ }
-                      var s1=document.createElement('script'); s1.type='module'; s1.src='/js/app.js'; document.body.appendChild(s1);
-                      try{ if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches){ var sm=document.createElement('script'); sm.type='module'; sm.src='/js/app-mobile.js'; document.body.appendChild(sm); } }catch(_){ }
+                      // 有cookie但验证失败，直接跳转登录页
+                      goLogin();
                       return;
                     }
                     return r.json();
@@ -106,11 +107,8 @@
                     try{ if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches){ var sm=document.createElement('script'); sm.type='module'; sm.src='/js/app-mobile.js'; document.body.appendChild(sm); } }catch(_){ }
                   })
                   .catch(function(){
-                    // 网络错误时，如果有cookie就直接加载应用，让应用内部处理认证状态
-                    // 这样避免了网络问题导致的不必要登录页跳转
-                    try{ sessionStorage.setItem('auth_checked','true'); sessionStorage.setItem('auth_checked_ts', String(Date.now())); }catch(_){ }
-                    var s1=document.createElement('script'); s1.type='module'; s1.src='/js/app.js'; document.body.appendChild(s1);
-                    try{ if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches){ var sm=document.createElement('script'); sm.type='module'; sm.src='/js/app-mobile.js'; document.body.appendChild(sm); } }catch(_){ }
+                    // 网络错误时跳转登录页
+                    goLogin();
                   });
                 return;
               }
@@ -136,8 +134,8 @@
                     return s;
                   });
                 } else {
-                  // 跳转到 loading 页面进行更完整的权限检查
-                  window.location.replace('/templates/loading.html?redirect=/');
+                  // 验证失败，直接跳转登录页
+                  goLogin();
                   return null;
                 }
               })
@@ -164,8 +162,8 @@
                   }catch(_){ }
               })
               .catch(function(){ 
-                // 网络错误时跳转到 loading 页面
-                window.location.replace('/templates/loading.html?redirect=/');
+                // 网络错误时跳转登录页
+                goLogin();
               });
           } else {
             // 非直接访问：快速权限检查
@@ -187,14 +185,8 @@
                     return s;
                   });
                 } else {
-                  // 如果有cookie但验证失败，让应用内部处理而不是立即跳转到登录页
-                  if (hasCookie) {
-                    try{ sessionStorage.setItem('auth_checked','true'); sessionStorage.setItem('auth_checked_ts', String(Date.now())); }catch(_){ }
-                    var s1 = document.createElement('script'); s1.type = 'module'; s1.src = '/js/app.js'; document.body.appendChild(s1);
-                    try{ if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches){ var sm=document.createElement('script'); sm.type='module'; sm.src='/js/app-mobile.js'; document.body.appendChild(sm); } }catch(_){ }
-                    return null;
-                  }
-                  window.location.replace('/html/login.html');
+                  // 验证失败，直接跳转登录页
+                  goLogin();
                   return null;
                 }
               })
@@ -218,21 +210,14 @@
                 }catch(_){ }
               })
               .catch(function(){ 
-                // 网络错误时，如果有cookie就直接加载应用
-                if (hasCookie) {
-                  try{ sessionStorage.setItem('auth_checked','true'); sessionStorage.setItem('auth_checked_ts', String(Date.now())); }catch(_){ }
-                  var s1 = document.createElement('script'); s1.type = 'module'; s1.src = '/js/app.js'; document.body.appendChild(s1);
-                  try{ if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches){ var sm=document.createElement('script'); sm.type='module'; sm.src='/js/app-mobile.js'; document.body.appendChild(sm); } }catch(_){ }
-                } else {
-                  window.location.replace('/html/login.html'); 
-                }
+                // 网络错误时跳转登录页
+                goLogin();
               });
           }
         }catch(_){ 
-          window.location.replace('/templates/loading.html?redirect=/'); 
+          goLogin();
         }
       })();
     </script>
   </body>
   </html>
-
