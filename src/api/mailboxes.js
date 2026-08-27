@@ -14,6 +14,61 @@ import {
   assignMailboxToUser
 } from '../db/index.js';
 import { handleMailboxAdminApi } from './mailboxAdmin.js';
+import { getMailpostConfig, mailpostFetch } from './mailpost.js';
+
+/**
+ * 从邮局系统拉取邮箱列表。
+ * 邮局不可用时返回 { ok: false }，由调用方回退到 D1。
+ * @param {object} options - 含 mailpostApiUrl / mailpostAdminToken
+ * @param {number} page - 页码（从1开始）
+ * @param {number} size - 每页数量
+ * @param {string} search - 搜索关键词
+ * @returns {Promise<{ok:boolean, list?:Array, total?:number, error?:string}>}
+ */
+export async function fetchMailpostMailboxes(options, page = 1, size = 20, search = '') {
+  const { baseUrl, adminToken, configured } = getMailpostConfig(options);
+  if (!configured) return { ok: false, error: '邮局系统未配置' };
+
+  const params = new URLSearchParams();
+  params.set('page', String(Math.max(1, Number(page) || 1)));
+  params.set('per_page', String(Math.min(100, Math.max(1, Number(size) || 20))));
+  if (search && String(search).trim()) {
+    params.set('search', String(search).trim());
+  }
+
+  const result = await mailpostFetch(
+    baseUrl, adminToken,
+    `/api/admin/mailboxes?${params.toString()}`
+  );
+
+  if (!result.ok || !result.data?.success) {
+    return { ok: false, error: result.data?.error || '获取邮局邮箱列表失败' };
+  }
+
+  const rawList = result.data.data?.mailboxes || result.data.data?.items || [];
+  const total = Number(
+    result.data.data?.total ??
+    result.data.data?.count ??
+    result.data.data?.total_count ??
+    rawList.length
+  );
+
+  const list = rawList.map(m => {
+    const addr = String(m.address || '');
+    return {
+      id: m.id != null ? String(m.id) : addr,
+      address: addr,
+      created_at: m.created_at || m.createdAt || m.created || '',
+      is_pinned: 0,
+      password_is_default: 1,
+      can_login: m.is_active === false || m.is_expired ? 0 : 1,
+      forward_to: null,
+      is_favorite: 0,
+    };
+  });
+
+  return { ok: true, list, total };
+}
 
 /**
  * 处理邮箱管理相关 API
@@ -228,6 +283,21 @@ export async function handleMailboxesApi(request, db, mailDomains, url, path, op
         return Response.json({ list: results || [], total: results?.length || 0 });
       } catch (e) {
         return Response.json({ list: [], total: 0 });
+      }
+    }
+
+    // 优先走邮局系统（非 mailboxOnly 模式），失败静默回退 D1
+    if (!mailboxOnly) {
+      const mpPage = Math.max(1, Number(url.searchParams.get('page') || 1));
+      const mpSize = Math.max(1, Math.min(500, Number(url.searchParams.get('size') || 20)));
+      const mpSearch = url.searchParams.get('q') || '';
+      try {
+        const mpResult = await fetchMailpostMailboxes(options, mpPage, mpSize, mpSearch);
+        if (mpResult.ok) {
+          return Response.json({ list: mpResult.list, total: mpResult.total });
+        }
+      } catch (e) {
+        console.error('[mailboxes] 邮局查询失败，回退D1:', e.message);
       }
     }
 

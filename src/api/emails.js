@@ -8,6 +8,55 @@ import { buildMockEmails, buildMockEmailDetail } from './mock.js';
 import { extractEmail, generateRandomId } from '../utils/common.js';
 import { getMailboxIdByAddress } from '../db/index.js';
 import { parseEmailBody } from '../email/parser.js';
+import { getMailpostMailbox, fetchMailpostInbox } from './mailpost.js';
+
+/**
+ * 从邮局系统拉取指定邮箱的收件箱。
+ * 流程：admin 查详情拿 mailbox_key → /api/get_mailbox_token 换 token → /api/get_inbox。
+ * 邮局不可用时返回 { ok: false }，由调用方回退到 D1。
+ * @param {object} options - 含 mailpostApiUrl / mailpostAdminToken
+ * @param {string} address - 邮箱地址
+ * @returns {Promise<{ok:boolean, emails?:Array, error?:string}>}
+ */
+export async function fetchMailpostEmails(options, address) {
+  if (!address) return { ok: false, error: '缺少邮箱地址' };
+
+  // 1. admin 查详情拿 mailbox_key（复用已有函数）
+  const mp = await getMailpostMailbox(options, address);
+  if (!mp.exists || !mp.mailbox?.mailbox_key) {
+    return { ok: false, error: '邮局中未找到该邮箱或缺少 mailbox_key' };
+  }
+
+  // 2. 换 token + 拉 inbox（复用已有函数）
+  const result = await fetchMailpostInbox(options, address, mp.mailbox.mailbox_key);
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  // 3. 映射为前端兼容格式 {id, sender, to_addrs, subject, received_at, is_read, preview, verification_code}
+  const emails = (result.emails || []).map((e, idx) => {
+    const body = String(e.Body || e.body || e.Text || e.text || '');
+    return {
+      id: e.id || e.ID || e.MessageID || `mp-${idx}`,
+      sender: e.From || e.from || e.Sender || e.sender || '',
+      to_addrs: address,
+      subject: e.Subject || e.subject || '(无主题)',
+      received_at: e.Sent || e.Timestamp || e.Date || e.received_at || '',
+      is_read: 0,
+      preview: body.substring(0, 120),
+      verification_code: '',
+    };
+  });
+
+  // 按时间倒序
+  emails.sort((a, b) => {
+    const ta = new Date(a.received_at).getTime() || 0;
+    const tb = new Date(b.received_at).getTime() || 0;
+    return tb - ta;
+  });
+
+  return { ok: true, emails };
+}
 
 // 邮箱登录模式只允许查看最近 24 小时内的邮件。
 function mailboxOnlyTimeFilter(enabled) {
@@ -47,6 +96,17 @@ export async function handleEmailsApi(request, db, url, path, options) {
       if (isMock) return Response.json(buildMockEmails(6));
 
       const normalized = extractEmail(mailbox).trim().toLowerCase();
+
+      // 优先走邮局系统，失败静默回退 D1
+      try {
+        const mpResult = await fetchMailpostEmails(options, normalized);
+        if (mpResult.ok) {
+          return Response.json(mpResult.emails || []);
+        }
+      } catch (e) {
+        console.error('[emails] 邮局查询失败，回退D1:', e.message);
+      }
+
       const mailboxId = await getMailboxIdByAddress(db, normalized);
       if (!mailboxId) return Response.json([]);
       const access = await getMailboxAccess(db, request, options, { mailboxId });
