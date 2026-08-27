@@ -93,9 +93,26 @@ export async function fetchMailpostMailboxes(options, page = 1, size = 20, searc
 export async function handleMailboxesApi(request, db, mailDomains, url, path, options) {
   const isMock = !!options.mockOnly;
 
-  // 返回域名列表给前端
+  // 返回域名列表给前端（优先从邮局系统获取）
   if (path === '/api/domains' && request.method === 'GET') {
     if (isMock) return Response.json(MOCK_DOMAINS);
+    // 优先从邮局系统获取域名
+    try {
+      const { baseUrl, configured } = getMailpostConfig(options);
+      if (configured) {
+        const resp = await fetch(`${baseUrl}/api/get_random_address`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          const mpDomains = data.available_domains || [];
+          if (Array.isArray(mpDomains) && mpDomains.length) {
+            return Response.json(mpDomains);
+          }
+        }
+      }
+    } catch (_) {}
+    // 回退到环境变量
     const domains = Array.isArray(mailDomains) ? mailDomains : [(mailDomains || 'temp.example.com')];
     return Response.json(domains);
   }
