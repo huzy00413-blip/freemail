@@ -7,6 +7,7 @@ import { getCurrentUserKey } from './storage.js';
 import { openForwardDialog, toggleFavorite, batchSetFavorite, injectDialogStyles } from './mailbox-settings.js';
 import { api, loadMailboxes as fetchMailboxes, loadDomains as fetchDomains, deleteMailbox as apiDeleteMailbox, toggleLogin as apiToggleLogin, batchToggleLogin, resetPassword as apiResetPassword, changePassword as apiChangePassword } from './modules/mailboxes/api.js';
 import { formatTime, escapeHtml, generateSkeleton, renderGrid, renderList, setRebindAvailable } from './modules/mailboxes/render.js';
+import { copyToClipboard } from './core/utils.js';
 
 injectDialogStyles();
 
@@ -148,8 +149,9 @@ function bindCardEvents() {
       
       switch (action) {
         case 'copy':
-          try { await navigator.clipboard.writeText(address); showToast('已复制', 'success'); }
-          catch(_) { showToast('复制失败', 'error'); }
+          copyToClipboard(address).then(ok => {
+            showToast(ok ? '已复制 ' + address : '复制失败', ok ? 'success' : 'error');
+          });
           break;
         case 'jump':
           showToast('跳转中...', 'info', 500);

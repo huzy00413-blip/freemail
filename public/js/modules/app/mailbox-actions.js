@@ -13,14 +13,6 @@ import { resetMbPage } from './mailbox-list.js';
 
 /**
  * 生成随机邮箱
- * @param {object} elements - DOM 元素
- * @param {HTMLInputElement} lenRange - 长度滑块
- * @param {HTMLSelectElement} domainSelect - 域名选择器
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} refresh - 刷新函数
- * @param {Function} loadMailboxes - 加载邮箱函数
- * @param {Function} autoRefreshCallback - 自动刷新回调
  */
 export async function generateMailbox(elements, lenRange, domainSelect, api, showToast, refresh, loadMailboxes, autoRefreshCallback, updateMailboxInfoUI) {
   const { gen, email, emailActions, listCard } = elements;
@@ -64,14 +56,6 @@ export async function generateMailbox(elements, lenRange, domainSelect, api, sho
 
 /**
  * 生成随机人名邮箱
- * @param {object} elements - DOM 元素
- * @param {HTMLInputElement} lenRange - 长度滑块
- * @param {HTMLSelectElement} domainSelect - 域名选择器
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} refresh - 刷新函数
- * @param {Function} loadMailboxes - 加载邮箱函数
- * @param {Function} autoRefreshCallback - 自动刷新回调
  */
 export async function generateNameMailbox(elements, lenRange, domainSelect, api, showToast, refresh, loadMailboxes, autoRefreshCallback, updateMailboxInfoUI) {
   const { genName } = elements;
@@ -120,11 +104,6 @@ export async function generateNameMailbox(elements, lenRange, domainSelect, api,
 
 /**
  * 创建自定义邮箱
- * @param {object} elements - DOM 元素
- * @param {HTMLSelectElement} domainSelect - 域名选择器
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} loadMailboxes - 加载邮箱函数
  */
 export async function createCustomMailbox(elements, domainSelect, api, showToast, loadMailboxes) {
   const { customLocalOverlay, customOverlay } = elements;
@@ -159,8 +138,6 @@ export async function createCustomMailbox(elements, domainSelect, api, showToast
 
 /**
  * 更新邮箱显示
- * @param {object} elements - DOM 元素
- * @param {string} address - 邮箱地址
  */
 export function updateEmailDisplay(elements, address) {
   const { email, emailActions, listCard } = elements;
@@ -175,12 +152,6 @@ export function updateEmailDisplay(elements, address) {
 
 /**
  * 选择邮箱
- * @param {string} address - 邮箱地址
- * @param {object} elements - DOM 元素
- * @param {Function} api - API 函数
- * @param {Function} refresh - 刷新函数
- * @param {Function} autoRefreshCallback - 自动刷新回调
- * @param {Function} updateMailboxInfoUI - 更新邮箱信息UI函数
  */
 export async function selectMailboxAddress(address, elements, api, refresh, autoRefreshCallback, updateMailboxInfoUI) {
   setCurrentMailbox(address);
@@ -209,11 +180,6 @@ export async function selectMailboxAddress(address, elements, api, refresh, auto
 
 /**
  * 置顶/取消置顶邮箱
- * @param {Event} event - 事件
- * @param {string} address - 邮箱地址
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} loadMailboxes - 加载邮箱函数
  */
 export async function toggleMailboxPin(event, address, api, showToast, loadMailboxes) {
   event.stopPropagation();
@@ -230,13 +196,6 @@ export async function toggleMailboxPin(event, address, api, showToast, loadMailb
 
 /**
  * 删除邮箱
- * @param {Event} event - 事件
- * @param {string} address - 邮箱地址
- * @param {object} elements - DOM 元素
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} showConfirm - 确认函数
- * @param {Function} loadMailboxes - 加载邮箱函数
  */
 export async function deleteMailboxAddress(event, address, elements, api, showToast, showConfirm, loadMailboxes) {
   event.stopPropagation();
@@ -263,8 +222,7 @@ export async function deleteMailboxAddress(event, address, elements, api, showTo
 }
 
 /**
- * 复制邮箱地址
- * @param {Function} showToast - 提示函数
+ * 复制邮箱地址（含 execCommand 降级方案，兼容非安全上下文）
  */
 export async function copyMailboxAddress(showToast) {
   const mailbox = getCurrentMailbox();
@@ -272,20 +230,30 @@ export async function copyMailboxAddress(showToast) {
     showToast('请先生成或选择一个邮箱', 'warn');
     return;
   }
+  let ok = false;
   try {
-    await navigator.clipboard.writeText(mailbox);
-    showToast(`已复制：${mailbox}`, 'success');
-  } catch(_) {
-    showToast('复制失败', 'error');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(mailbox);
+      ok = true;
+    }
+  } catch (_) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = mailbox;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (_) { ok = false; }
   }
+  showToast(ok ? `已复制：${mailbox}` : '复制失败', ok ? 'success' : 'error');
 }
 
 /**
  * 清空邮件
- * @param {Function} api - API 函数
- * @param {Function} showToast - 提示函数
- * @param {Function} showConfirm - 确认函数
- * @param {Function} refresh - 刷新函数
  */
 export async function clearAllEmails(api, showToast, showConfirm, refresh) {
   const mailbox = getCurrentMailbox();
@@ -309,7 +277,6 @@ export async function clearAllEmails(api, showToast, showConfirm, refresh) {
 
 /**
  * 登出
- * @param {Function} api - API 函数
  */
 export async function logout(api) {
   try {
